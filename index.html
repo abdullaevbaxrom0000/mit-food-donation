@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Тестовая страница</title>
+</head>
+<body>
+  <h1>Добро пожаловать!</h1>
+  <!-- Здесь можно подключить клиентский скрипт, если нужно -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io('http://localhost:5000');
+    socket.on('updateDonations', (data) => {
+      console.log('Обновление от сервера:', data);
+    });
+  </script>
+</body>
+</html>
