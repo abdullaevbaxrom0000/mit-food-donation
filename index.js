@@ -7,15 +7,15 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:3000", "https://www.mit-foodcompany.uz/"], // Разрешаем запросы с локального фронтенда и Vercel
-    methods: ["GET", "POST"], // Разрешённые методы
+    origin: ["http://localhost:3000", "https://www.mit-foodcompany.uz"], // Укажи точный домен фронтенда
+    methods: ["GET", "POST"],
+    credentials: true,
+    transports: ['websocket', 'polling'] // Поддержка всех транспортов
   }
 });
 
-// Используем порт от Render или 5000 для локальной разработки
 const port = process.env.PORT || 5000;
 
-// Храним количество донатов для каждой позиции
 let donations = {
   1: 20, // Всего Донаты (heart.svg)
   2: 7,  // Пицца (spizza.svg)
@@ -29,14 +29,11 @@ app.get('/', (req, res) => {
 
 io.on('connection', (socket) => {
   console.log('Пользователь подключился');
-  // Отправляем текущие значения донатов новому пользователю
   socket.emit('updateDonations', donations);
 
-  // Обработка оплаты и увеличения донатов
   socket.on('paymentCompleted', (items) => {
-    console.log('Получены items:', items); // Логируем все items
+    console.log('Получены items:', items);
     items.forEach(item => {
-      console.log('Обработка item:', item.name, ' (нижний регистр:', item.name.toLowerCase(), ')');
       const storyId = Object.keys(donations).find(id => {
         const nameLower = item.name.toLowerCase();
         if (id == 2 && nameLower.includes('пицца')) return true;
@@ -49,7 +46,7 @@ io.on('connection', (socket) => {
         donations[1] += item.quantity || 1;
         console.log(`Увеличен storyId ${storyId} и 1 на ${item.quantity || 1}`);
       } else {
-        console.log('Не найдено storyId для:', item.name, '(нижний регистр:', item.name.toLowerCase(), ')');
+        console.log('Не найдено storyId для:', item.name);
       }
     });
     io.emit('updateDonations', donations);
