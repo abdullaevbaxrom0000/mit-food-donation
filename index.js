@@ -7,11 +7,13 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:3000", "http://192.168.100.57:3000"],  // Разрешаем запросы с фронтенда
-    methods: ["GET", "POST"],        // Разрешённые методы
+    origin: ["http://localhost:3000", "https://www.mit-foodcompany.uz/"], // Разрешаем запросы с локального фронтенда и Vercel
+    methods: ["GET", "POST"], // Разрешённые методы
   }
 });
-const port = 5000;
+
+// Используем порт от Render или 5000 для локальной разработки
+const port = process.env.PORT || 5000;
 
 // Храним количество донатов для каждой позиции
 let donations = {
@@ -60,5 +62,5 @@ io.on('connection', (socket) => {
 });
 
 server.listen(port, () => {
-  console.log(`Сервер запущен на http://localhost:${port}`);
+  console.log(`Сервер запущен на порту ${port}`);
 });
