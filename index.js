@@ -7,10 +7,10 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:3000", "https://www.mit-foodcompany.uz"], // Укажи точный домен фронтенда
+    origin: ["http://localhost:3000", "https://www.mit-foodcompany.uz"],
     methods: ["GET", "POST"],
     credentials: true,
-    transports: ['websocket', 'polling'] // Поддержка всех транспортов
+    transports: ['websocket', 'polling']
   }
 });
 
@@ -32,8 +32,16 @@ io.on('connection', (socket) => {
   socket.emit('updateDonations', donations);
 
   socket.on('paymentCompleted', (items) => {
+    if (!Array.isArray(items)) {
+      console.log('Ошибка: items должен быть массивом');
+      return;
+    }
     console.log('Получены items:', items);
     items.forEach(item => {
+      if (!item || !item.name || typeof item.quantity !== 'number') {
+        console.log('Ошибка: неверный формат item:', item);
+        return;
+      }
       const storyId = Object.keys(donations).find(id => {
         const nameLower = item.name.toLowerCase();
         if (id == 2 && nameLower.includes('пицца')) return true;
