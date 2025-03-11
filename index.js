@@ -1,8 +1,11 @@
+require('dotenv').config(); // Для чтения переменных окружения (DATABASE_URL)
+const { Pool } = require('pg'); // Для работы с PostgreSQL
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 
+// Настройка Express и Socket.io
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -14,49 +17,133 @@ const io = new Server(server, {
   }
 });
 
-const port = process.env.PORT || 5000;
+// Подключение к PostgreSQL
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false // Для Render
+  }
+});
 
-let donations = {
-  1: 20, // Всего Донаты (heart.svg)
-  2: 7,  // Пицца (spizza.svg)
-  3: 10, // Кола (bottle.svg)
-  4: 3   // Кат бургер (gam.svg)
-};
+// Проверка подключения к базе (для отладки)
+pool.connect()
+  .then(() => console.log('Подключение к базе установлено'))
+  .catch(err => console.error('Ошибка подключения к базе:', err));
 
+// Переменная для хранения донатов в памяти
+let donations = {};
+
+// Функция для создания таблицы донатов
+async function createDonationsTable() {
+  const createTableQuery = `
+    CREATE TABLE IF NOT EXISTS donations (
+      donationId SERIAL PRIMARY KEY,
+      count INT NOT NULL
+    );
+  `;
+  await pool.query(createTableQuery);
+
+  // Проверяем, есть ли записи
+  const checkRows = await pool.query('SELECT donationId FROM donations');
+  if (checkRows.rows.length === 0) {
+    // Если записей нет, вставляем начальные значения
+    const insertDefaults = `
+      INSERT INTO donations (donationId, count) 
+      VALUES (1, 20), (2, 7), (3, 10), (4, 3);
+    `;
+    await pool.query(insertDefaults);
+    console.log('Вставлены начальные данные по донатам.');
+  } else {
+    console.log('Таблица donations уже содержит данные.');
+  }
+}
+
+// Функция для загрузки донатов из базы в память
+async function loadDonationsFromDB() {
+  const result = await pool.query('SELECT donationId, count FROM donations');
+  const temp = {};
+  result.rows.forEach(row => {
+    temp[row.donationId] = row.count;
+  });
+  donations = temp;
+  console.log('Донаты загружены из БД:', donations);
+}
+
+// Функция для обновления донатов в базе
+async function updateDonationInDB(donationId, incrementValue) {
+  await pool.query(
+    'UPDATE donations SET count = count + $1 WHERE donationId = $2',
+    [incrementValue, donationId]
+  );
+}
+
+// Инициализация при старте: создаём таблицу и загружаем данные
+(async () => {
+  try {
+    await createDonationsTable();
+    await loadDonationsFromDB();
+  } catch (err) {
+    console.error('Ошибка при инициализации базы:', err);
+  }
+})();
+
+// Настройка маршрута для отдачи index.html
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+// Обработка событий Socket.io
 io.on('connection', (socket) => {
   console.log('Пользователь подключился');
+
+  // Отправляем актуальные данные новому клиенту
   socket.emit('updateDonations', donations);
 
-  socket.on('paymentCompleted', (items) => {
+  socket.on('paymentCompleted', async (items) => {
     if (!Array.isArray(items)) {
       console.log('Ошибка: items должен быть массивом');
       return;
     }
     console.log('Получены items:', items);
-    items.forEach(item => {
+
+    for (const item of items) {
       if (!item || !item.name || typeof item.quantity !== 'number') {
         console.log('Ошибка: неверный формат item:', item);
-        return;
+        continue;
       }
+
       const storyId = Object.keys(donations).find(id => {
         const nameLower = item.name.toLowerCase();
         if (id == 2 && nameLower.includes('пицца')) return true;
         if (id == 3 && nameLower === 'кола') return true;
-        if (id == 4 && nameLower.includes('кат бургер')) return true;
+        if (id == 4 && (nameLower.includes('кат бургер') || nameLower.includes('двойной кат'))) return true;
         return false;
       });
+
       if (storyId) {
-        donations[storyId] += item.quantity || 1;
-        donations[1] += item.quantity || 1;
-        console.log(`Увеличен storyId ${storyId} и 1 на ${item.quantity || 1}`);
+        const qty = item.quantity || 1;
+
+        // Обновляем в памяти
+        donations[storyId] += qty;
+        donations[1] += qty;
+
+        console.log(`Увеличен storyId ${storyId} и 1 на ${qty}`);
+
+        // Обновляем в базе
+        try {
+          await updateDonationInDB(storyId, qty);
+          await updateDonationInDB(1, qty);
+        } catch (err) {
+          console.error('Ошибка обновления донатов в БД:', err);
+          // Синхронизируем данные из базы, если произошла ошибка
+          await loadDonationsFromDB();
+        }
       } else {
         console.log('Не найдено storyId для:', item.name);
       }
-    });
+    }
+
+    // Отправляем обновлённые данные всем клиентам
     io.emit('updateDonations', donations);
     console.log('Донаты обновлены:', donations);
   });
@@ -66,6 +153,16 @@ io.on('connection', (socket) => {
   });
 });
 
+// Запуск сервера
+const port = process.env.PORT || 5000;
 server.listen(port, () => {
   console.log(`Сервер запущен на порту ${port}`);
+});
+
+// Graceful shutdown для закрытия пула соединений
+process.on('SIGTERM', async () => {
+  console.log('Завершение работы сервера...');
+  await pool.end();
+  console.log('Соединение с базой закрыто.');
+  process.exit(0);
 });
