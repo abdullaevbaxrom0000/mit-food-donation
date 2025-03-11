@@ -38,7 +38,7 @@ async function createDonationsTable() {
   const createTableQuery = `
     CREATE TABLE IF NOT EXISTS donations (
       donationId SERIAL PRIMARY KEY,
-      count INT NOT NULL
+      count INT NOT NULL DEFAULT 0
     );
   `;
   await pool.query(createTableQuery);
@@ -50,7 +50,7 @@ async function createDonationsTable() {
     const insertDefaults = `
       INSERT INTO donations (donationId, count) 
       VALUES (1, 20), (2, 7), (3, 10), (4, 3)
-      ON CONFLICT (donationId) DO NOTHING;
+      ON CONFLICT (donationId) DO UPDATE SET count = EXCLUDED.count;
     `;
     await pool.query(insertDefaults);
     console.log('Вставлены начальные данные по донатам.');
@@ -65,14 +65,21 @@ async function loadDonationsFromDB() {
   const temp = {};
   result.rows.forEach(row => {
     const id = parseInt(row.donationId, 10); // Парсим donationId как целое число
-    if (!isNaN(id)) {
+    if (!isNaN(id) && row.count !== undefined) {
       temp[id] = row.count;
     } else {
-      console.warn('Некорректный donationId:', row.donationId);
+      console.error('Некорректный donationId или count:', row);
     }
   });
   donations = temp;
   console.log('Донаты загружены из БД:', donations);
+
+  // Если данные не загружены, принудительно вставляем начальные значения
+  if (Object.keys(donations).length === 0) {
+    await createDonationsTable(); // Пересоздаём таблицу с начальными данными
+    await loadDonationsFromDB(); // Повторно загружаем
+    console.log('Принудительная инициализация данных выполнена.');
+  }
 }
 
 // Функция для обновления донатов в базе
