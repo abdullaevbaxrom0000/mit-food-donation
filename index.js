@@ -7,6 +7,7 @@ const path = require('path');
 
 // Настройка Express и Socket.io
 const app = express();
+app.use(express.json());
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -169,6 +170,55 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log('Пользователь отключился');
   });
+});
+
+// Обработка эндпоинта для Telegram Login
+app.post('/api/telegram-login', async (req, res) => {
+  const { id, first_name, last_name, username, photo_url, auth_date, hash } = req.body;
+
+  // Получаем токен бота (должен быть безопасно сохранён, например, в переменной окружения)
+  const botToken = process.env.TELEGRAM_BOT_TOKEN; // Укажи свой токен бота здесь или в .env
+  if (!botToken) {
+    return res.status(500).json({ success: false, message: 'Токен бота не настроен' });
+  }
+
+  // Данные для проверки подписи
+  const dataCheckString = Object.keys(req.body)
+    .filter(key => key !== 'hash')
+    .sort()
+    .map(key => `${key}=${req.body[key]}`)
+    .join('\n');
+
+  // Секретный ключ — это токен бота без префикса "bot"
+  const secretKey = botToken.split(':')[0];
+
+  // Проверка подписи с использованием HMAC-SHA256
+  const crypto = require('crypto');
+  const calculatedHash = crypto
+    .createHmac('sha256', secretKey)
+    .update(dataCheckString)
+    .digest('hex');
+
+  if (calculatedHash !== hash) {
+    return res.status(400).json({ success: false, message: 'Неверная подпись' });
+  }
+
+  // Проверка времени авторизации (не старше 24 часов)
+  const authDate = parseInt(auth_date, 10);
+  const now = Math.floor(Date.now() / 1000);
+  if (now - authDate > 24 * 60 * 60) {
+    return res.status(400).json({ success: false, message: 'Сессия истекла' });
+  }
+
+  // Здесь можно сохранить пользователя в базе данных (например, в таблице users)
+  // Для простоты пока только логируем
+  console.log('Успешная авторизация через Telegram:', { id, first_name, username });
+
+  // Создаём простую сессию (например, JWT). Для продакшена используй библиотеку like jsonwebtoken
+  const sessionToken = crypto.randomBytes(16).toString('hex');
+  res.cookie('sessionToken', sessionToken, { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 }); // 7 дней
+
+  res.json({ success: true, message: 'Авторизация успешна' });
 });
 
 // Запуск сервера
