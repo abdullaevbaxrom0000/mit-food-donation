@@ -63,7 +63,7 @@ async function loadDonationsFromDB() {
   const result = await pool.query('SELECT donationId, count FROM donations');
   const temp = {};
   result.rows.forEach(row => {
-    temp[row.donationId] = row.count;
+    temp[Number(row.donationId)] = row.count; // Приводим donationId к числу
   });
   donations = temp;
   console.log('Донаты загружены из БД:', donations);
@@ -114,9 +114,9 @@ io.on('connection', (socket) => {
 
       const storyId = Object.keys(donations).find(id => {
         const nameLower = item.name.toLowerCase();
-        if (id == 2 && nameLower.includes('пицца')) return true;
-        if (id == 3 && nameLower === 'кола') return true;
-        if (id == 4 && (nameLower.includes('кат бургер') || nameLower.includes('двойной кат'))) return true;
+        if (Number(id) === 2 && nameLower.includes('пицца')) return true;
+        if (Number(id) === 3 && nameLower === 'кола') return true;
+        if (Number(id) === 4 && (nameLower.includes('кат бургер') || nameLower.includes('двойной кат'))) return true;
         return false;
       });
 
