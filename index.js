@@ -49,7 +49,8 @@ async function createDonationsTable() {
     // Если записей нет, вставляем начальные значения
     const insertDefaults = `
       INSERT INTO donations (donationId, count) 
-      VALUES (1, 20), (2, 7), (3, 10), (4, 3);
+      VALUES (1, 20), (2, 7), (3, 10), (4, 3)
+      ON CONFLICT (donationId) DO NOTHING;
     `;
     await pool.query(insertDefaults);
     console.log('Вставлены начальные данные по донатам.');
@@ -63,7 +64,12 @@ async function loadDonationsFromDB() {
   const result = await pool.query('SELECT donationId, count FROM donations');
   const temp = {};
   result.rows.forEach(row => {
-    temp[Number(row.donationId)] = row.count; // Приводим donationId к числу
+    const id = parseInt(row.donationId, 10); // Парсим donationId как целое число
+    if (!isNaN(id)) {
+      temp[id] = row.count;
+    } else {
+      console.warn('Некорректный donationId:', row.donationId);
+    }
   });
   donations = temp;
   console.log('Донаты загружены из БД:', donations);
@@ -113,10 +119,11 @@ io.on('connection', (socket) => {
       }
 
       const storyId = Object.keys(donations).find(id => {
+        const numId = parseInt(id, 10); // Преобразуем id в число
         const nameLower = item.name.toLowerCase();
-        if (Number(id) === 2 && nameLower.includes('пицца')) return true;
-        if (Number(id) === 3 && nameLower === 'кола') return true;
-        if (Number(id) === 4 && (nameLower.includes('кат бургер') || nameLower.includes('двойной кат'))) return true;
+        if (numId === 2 && nameLower.includes('пицца')) return true;
+        if (numId === 3 && nameLower === 'кола') return true;
+        if (numId === 4 && (nameLower.includes('кат бургер') || nameLower.includes('двойной кат'))) return true;
         return false;
       });
 
@@ -131,7 +138,7 @@ io.on('connection', (socket) => {
 
         // Обновляем в базе
         try {
-          await updateDonationInDB(storyId, qty);
+          await updateDonationInDB(parseInt(storyId, 10), qty);
           await updateDonationInDB(1, qty);
         } catch (err) {
           console.error('Ошибка обновления донатов в БД:', err);
@@ -154,7 +161,7 @@ io.on('connection', (socket) => {
 });
 
 // Запуск сервера
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 10000; // Убедимся, что порт совпадает с настройками Render
 server.listen(port, () => {
   console.log(`Сервер запущен на порту ${port}`);
 });
