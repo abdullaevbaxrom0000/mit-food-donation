@@ -63,14 +63,18 @@ async function createDonationsTable() {
 async function loadDonationsFromDB() {
   const result = await pool.query('SELECT donationId, count FROM donations');
   const temp = {};
+  
+  
   result.rows.forEach(row => {
-    const id = parseInt(row.donationId, 10); // Парсим donationId как целое число
-    if (!isNaN(id) && row.count !== undefined) {
-      temp[id] = row.count;
+    const id = parseInt(row.donationid, 10);
+    const cnt = row.count; 
+    if (!isNaN(id) && cnt !== undefined) {
+      temp[id] = cnt;
     } else {
-      console.error('Некорректный donationId или count:', row);
+      console.error('Некорректный donationid или count:', row);
     }
   });
+  
   donations = temp;
   console.log('Донаты загружены из БД:', donations);
 
