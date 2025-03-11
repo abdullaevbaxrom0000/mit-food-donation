@@ -5,6 +5,8 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const cors = require('cors');
+const crypto = require('crypto');
+
 
 
 // Настройка Express и Socket.io
@@ -12,7 +14,8 @@ const app = express();
 app.use(cors({
   origin: ['http://localhost:3000', 'https://www.mit-foodcompany.uz'],
   methods: ['GET', 'POST'],
-  credentials: true
+  credentials: true,
+  optionsSuccessStatus: 200
 }));
 
 app.use(express.json());
