@@ -6,6 +6,7 @@ const { Server } = require('socket.io');
 const path = require('path');
 const cors = require('cors');
 const crypto = require('crypto');
+const cookieParser = require('cookie-parser'); // Добавляем cookie-parser
 
 const app = express();
 app.use(cors({
@@ -16,6 +17,8 @@ app.use(cors({
 }));
 
 app.use(express.json());
+app.use(cookieParser()); // Добавляем middleware для парсинга cookies
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
