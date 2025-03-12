@@ -225,7 +225,8 @@ app.post('/api/telegram-login', async (req, res) => {
     httpOnly: true, 
     maxAge: 7 * 24 * 60 * 60 * 1000,
     sameSite: 'none',
-    secure: true
+    secure: true,
+    domain: '.mit-foodcompany.uz'
   });
   res.json({ success: true, message: 'Авторизация успешна' });
 });
@@ -250,7 +251,7 @@ app.post('/api/logout', async (req, res) => {
     }
 
     // Очищаем куку с теми же параметрами
-    res.clearCookie('sessionToken', { sameSite: 'none', secure: true });
+    res.clearCookie('sessionToken', { sameSite: 'none', secure: true , domain: '.mit-foodcompany.uz' });
     res.json({ success: true, message: 'Выход выполнен успешно' });
   } catch (err) {
     console.error('Ошибка при выходе:', err);
