@@ -6,9 +6,11 @@ const { Server } = require('socket.io');
 const path = require('path');
 const cors = require('cors');
 const crypto = require('crypto');
-const cookieParser = require('cookie-parser'); // Добавляем cookie-parser
+const cookieParser = require('cookie-parser'); // Для парсинга cookies
 
 const app = express();
+
+// Настройка CORS для Express
 app.use(cors({
   origin: ['http://localhost:3000', 'https://www.mit-foodcompany.uz'],
   methods: ['GET', 'POST'],
@@ -17,7 +19,7 @@ app.use(cors({
 }));
 
 app.use(express.json());
-app.use(cookieParser()); // Добавляем middleware для парсинга cookies
+app.use(cookieParser());
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -40,6 +42,7 @@ pool.connect()
 
 let donations = {};
 
+// Создание таблицы донатов
 async function createDonationsTable() {
   const createTableQuery = `
     CREATE TABLE IF NOT EXISTS donations (
@@ -63,6 +66,7 @@ async function createDonationsTable() {
   }
 }
 
+// Создание таблицы сессий
 async function createSessionsTable() {
   const createTableQuery = `
     CREATE TABLE IF NOT EXISTS sessions (
@@ -76,6 +80,7 @@ async function createSessionsTable() {
   console.log('Таблица sessions создана или уже существует.');
 }
 
+// Загрузка донатов из базы в память
 async function loadDonationsFromDB() {
   const result = await pool.query('SELECT donationId, count FROM donations');
   const temp = {};
@@ -98,6 +103,7 @@ async function loadDonationsFromDB() {
   }
 }
 
+// Обновление донатов в базе
 async function updateDonationInDB(donationId, incrementValue) {
   await pool.query(
     'UPDATE donations SET count = count + $1 WHERE donationId = $2',
@@ -119,6 +125,7 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+// Socket.io для донатов
 io.on('connection', (socket) => {
   console.log('Пользователь подключился');
   socket.emit('updateDonations', donations);
@@ -135,7 +142,6 @@ io.on('connection', (socket) => {
         console.log('Ошибка: неверный формат item:', item);
         continue;
       }
-
       const storyId = Object.keys(donations).find(id => {
         const numId = parseInt(id, 10);
         const nameLower = item.name.toLowerCase();
@@ -162,7 +168,6 @@ io.on('connection', (socket) => {
         console.log('Не найдено storyId для:', item.name);
       }
     }
-
     io.emit('updateDonations', donations);
     console.log('Донаты обновлены:', donations);
   });
@@ -172,9 +177,9 @@ io.on('connection', (socket) => {
   });
 });
 
+// Эндпоинт для Telegram Login
 app.post('/api/telegram-login', async (req, res) => {
   const { id, first_name, last_name, username, photo_url, auth_date, hash } = req.body;
-
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   if (!botToken) {
     return res.status(500).json({ success: false, message: 'Токен бота не настроен' });
@@ -196,9 +201,9 @@ app.post('/api/telegram-login', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Неверная подпись' });
   }
 
-  const authDate = parseInt(auth_date, 10);
+  const authDateNum = parseInt(auth_date, 10);
   const now = Math.floor(Date.now() / 1000);
-  if (now - authDate > 24 * 60 * 60) {
+  if (now - authDateNum > 24 * 60 * 60) {
     return res.status(400).json({ success: false, message: 'Сессия истекла' });
   }
 
@@ -215,12 +220,19 @@ app.post('/api/telegram-login', async (req, res) => {
     return res.status(500).json({ success: false, message: 'Ошибка сервера' });
   }
 
-  res.cookie('sessionToken', sessionToken, { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 });
+  // Устанавливаем куку с нужными параметрами для кросс-доменного запроса
+  res.cookie('sessionToken', sessionToken, { 
+    httpOnly: true, 
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    sameSite: 'none',
+    secure: true
+  });
   res.json({ success: true, message: 'Авторизация успешна' });
 });
 
+// Эндпоинт для logout
 app.post('/api/logout', async (req, res) => {
-  console.log('Cookies получены:', req.cookies); // Добавляем отладку
+  console.log('Cookies получены:', req.cookies);
   const sessionToken = req.cookies.sessionToken;
 
   if (!sessionToken) {
@@ -237,13 +249,15 @@ app.post('/api/logout', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Сессия не найдена' });
     }
 
-    res.clearCookie('sessionToken');
+    // Очищаем куку с теми же параметрами
+    res.clearCookie('sessionToken', { sameSite: 'none', secure: true });
     res.json({ success: true, message: 'Выход выполнен успешно' });
   } catch (err) {
     console.error('Ошибка при выходе:', err);
     res.status(500).json({ success: false, message: 'Ошибка сервера' });
   }
 });
+
 const port = process.env.PORT || 10000;
 server.listen(port, () => {
   console.log(`Сервер запущен на порту ${port}`);
