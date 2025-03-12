@@ -220,6 +220,7 @@ app.post('/api/telegram-login', async (req, res) => {
 });
 
 app.post('/api/logout', async (req, res) => {
+  console.log('Cookies получены:', req.cookies); // Добавляем отладку
   const sessionToken = req.cookies.sessionToken;
 
   if (!sessionToken) {
@@ -243,7 +244,6 @@ app.post('/api/logout', async (req, res) => {
     res.status(500).json({ success: false, message: 'Ошибка сервера' });
   }
 });
-
 const port = process.env.PORT || 10000;
 server.listen(port, () => {
   console.log(`Сервер запущен на порту ${port}`);
