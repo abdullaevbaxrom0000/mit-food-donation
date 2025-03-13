@@ -210,17 +210,32 @@ app.post('/api/telegram-login', async (req, res) => {
   const sessionToken = crypto.randomBytes(16).toString('hex');
 
   try {
-    await pool.query(
-      'INSERT INTO sessions (sessionToken, userId) VALUES ($1, $2) ON CONFLICT (sessionToken) DO UPDATE SET isActive = TRUE',
-      [sessionToken, id]
+    // Проверяем, есть ли активная сессия для этого userId
+    const existingSession = await pool.query(
+      'SELECT sessionToken, isActive FROM sessions WHERE userId = $1 AND isActive = TRUE',
+      [id]
     );
-    console.log('Сессия сохранена:', { sessionToken, userId: id });
+
+    if (existingSession.rows.length > 0) {
+      // Если активная сессия есть, обновляем её токен
+      await pool.query(
+        'UPDATE sessions SET sessionToken = $1, isActive = TRUE WHERE userId = $2',
+        [sessionToken, id]
+      );
+      console.log('Сессия обновлена:', { sessionToken, userId: id });
+    } else {
+      // Если активной сессии нет, создаём новую
+      await pool.query(
+        'INSERT INTO sessions (sessionToken, userId, isActive) VALUES ($1, $2, TRUE) ON CONFLICT (userId) DO UPDATE SET sessionToken = $1, isActive = TRUE',
+        [sessionToken, id]
+      );
+      console.log('Сессия сохранена:', { sessionToken, userId: id });
+    }
   } catch (err) {
     console.error('Ошибка при сохранении сессии:', err);
     return res.status(500).json({ success: false, message: 'Ошибка сервера' });
   }
 
-  // Устанавливаем куку с нужными параметрами для кросс-доменного запроса
   res.cookie('sessionToken', sessionToken, { 
     httpOnly: true, 
     maxAge: 7 * 24 * 60 * 60 * 1000,
