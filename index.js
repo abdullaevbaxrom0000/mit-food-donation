@@ -40,9 +40,10 @@ pool.connect()
   .then(() => console.log('Подключение к базе установлено'))
   .catch(err => console.error('Ошибка подключения к базе:', err));
 
+// Храним донаты в памяти
 let donations = {};
 
-// Создание таблицы донатов
+// 1. Создание таблицы донатов (без изменений)
 async function createDonationsTable() {
   const createTableQuery = `
     CREATE TABLE IF NOT EXISTS donations (
@@ -55,7 +56,7 @@ async function createDonationsTable() {
   const checkRows = await pool.query('SELECT donationId FROM donations');
   if (checkRows.rows.length === 0) {
     const insertDefaults = `
-      INSERT INTO donations (donationId, count) 
+      INSERT INTO donations (donationId, count)
       VALUES (1, 20), (2, 7), (3, 10), (4, 3)
       ON CONFLICT (donationId) DO UPDATE SET count = EXCLUDED.count;
     `;
@@ -66,11 +67,14 @@ async function createDonationsTable() {
   }
 }
 
-// Создание таблицы сессий
+// 2. Новая схема таблицы sessions: id SERIAL PRIMARY KEY, sessionToken UNIQUE
 async function createSessionsTable() {
+  // Если вы уже создали старую таблицу, придётся дропнуть вручную.
+  // Здесь мы просто создаём таблицу, если её нет.
   const createTableQuery = `
     CREATE TABLE IF NOT EXISTS sessions (
-      sessionToken VARCHAR(255) PRIMARY KEY,
+      id SERIAL PRIMARY KEY,
+      sessionToken VARCHAR(255) UNIQUE NOT NULL,
       userId VARCHAR(255) NOT NULL,
       createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       isActive BOOLEAN DEFAULT TRUE
@@ -80,7 +84,7 @@ async function createSessionsTable() {
   console.log('Таблица sessions создана или уже существует.');
 }
 
-// Загрузка донатов из базы в память
+// 3. Загрузка донатов из базы
 async function loadDonationsFromDB() {
   const result = await pool.query('SELECT donationId, count FROM donations');
   const temp = {};
@@ -103,7 +107,7 @@ async function loadDonationsFromDB() {
   }
 }
 
-// Обновление донатов в базе
+// 4. Обновление донатов в базе
 async function updateDonationInDB(donationId, incrementValue) {
   await pool.query(
     'UPDATE donations SET count = count + $1 WHERE donationId = $2',
@@ -111,16 +115,18 @@ async function updateDonationInDB(donationId, incrementValue) {
   );
 }
 
+// Инициализация базы при старте
 (async () => {
   try {
     await createDonationsTable();
-    await createSessionsTable();
+    await createSessionsTable(); // <-- Новая схема sessions
     await loadDonationsFromDB();
   } catch (err) {
     console.error('Ошибка при инициализации базы:', err);
   }
 })();
 
+// Отдаём index.html
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
@@ -177,9 +183,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// Эндпоинт для Telegram Login
-
-
+// Эндпоинт Telegram Login
 app.post('/api/telegram-login', async (req, res) => {
   const { id, first_name, last_name, username, photo_url, auth_date, hash } = req.body;
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -209,31 +213,29 @@ app.post('/api/telegram-login', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Сессия истекла' });
   }
 
+  // Генерируем случайный токен (крайне маловероятно, но возможна коллизия)
   const sessionToken = crypto.randomBytes(16).toString('hex');
 
   try {
-    // Проверяем, есть ли активная сессия для этого userId
+    // Проверяем, есть ли активная сессия для userId
     const existingSession = await pool.query(
-      'SELECT sessionToken, isActive FROM sessions WHERE userId = $1 AND isActive = TRUE',
+      'SELECT id, sessionToken, isActive FROM sessions WHERE userId = $1 AND isActive = TRUE',
       [id]
     );
 
     if (existingSession.rows.length > 0) {
-      // Если активная сессия есть, обновляем её токен
+      // Обновляем существующую запись
       await pool.query(
         'UPDATE sessions SET sessionToken = $1 WHERE userId = $2 AND isActive = TRUE',
         [sessionToken, id]
       );
       console.log('Сессия обновлена:', { sessionToken, userId: id });
     } else {
-      // Удаляем ВСЕ существующие сессии для этого userId (активные и неактивные)
-      await pool.query(
-        'DELETE FROM sessions WHERE userId = $1',
-        [id]
-      );
+      // Удаляем все старые записи для userId
+      await pool.query('DELETE FROM sessions WHERE userId = $1', [id]);
       console.log('Все сессии удалены для userId:', id);
 
-      // Создаём новую сессию
+      // Вставляем новую
       await pool.query(
         'INSERT INTO sessions (sessionToken, userId, isActive) VALUES ($1, $2, TRUE)',
         [sessionToken, id]
@@ -245,8 +247,9 @@ app.post('/api/telegram-login', async (req, res) => {
     return res.status(500).json({ success: false, message: 'Ошибка сервера: ' + err.message });
   }
 
-  res.cookie('sessionToken', sessionToken, { 
-    httpOnly: true, 
+  // Устанавливаем куку
+  res.cookie('sessionToken', sessionToken, {
+    httpOnly: true,
     maxAge: 7 * 24 * 60 * 60 * 1000,
     sameSite: 'none',
     secure: true,
@@ -254,7 +257,8 @@ app.post('/api/telegram-login', async (req, res) => {
   });
   res.json({ success: true, message: 'Авторизация успешна' });
 });
-// Эндпоинт для logout
+
+// Эндпоинт logout
 app.post('/api/logout', async (req, res) => {
   console.log('Cookies получены:', req.cookies);
   const sessionToken = req.cookies.sessionToken;
@@ -273,8 +277,12 @@ app.post('/api/logout', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Сессия не найдена' });
     }
 
-    // Очищаем куку с теми же параметрами
-    res.clearCookie('sessionToken', { sameSite: 'none', secure: true , domain: '.mit-foodcompany.uz' });
+    // Очищаем куку
+    res.clearCookie('sessionToken', {
+      sameSite: 'none',
+      secure: true,
+      domain: '.mit-foodcompany.uz'
+    });
     res.json({ success: true, message: 'Выход выполнен успешно' });
   } catch (err) {
     console.error('Ошибка при выходе:', err);
@@ -287,6 +295,7 @@ server.listen(port, () => {
   console.log(`Сервер запущен на порту ${port}`);
 });
 
+// Отключаемся от базы при SIGTERM
 process.on('SIGTERM', async () => {
   console.log('Завершение работы сервера...');
   await pool.end();
