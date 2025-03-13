@@ -226,20 +226,12 @@ app.post('/api/telegram-login', async (req, res) => {
       );
       console.log('Сессия обновлена:', { sessionToken, userId: id });
     } else {
-      // Проверяем, есть ли неактивная сессия для этого userId
-      const inactiveSession = await pool.query(
-        'SELECT sessionToken FROM sessions WHERE userId = $1 AND isActive = FALSE',
+      // Удаляем ВСЕ существующие сессии для этого userId (активные и неактивные)
+      await pool.query(
+        'DELETE FROM sessions WHERE userId = $1',
         [id]
       );
-
-      if (inactiveSession.rows.length > 0) {
-        // Если есть неактивная сессия, удаляем её
-        await pool.query(
-          'DELETE FROM sessions WHERE userId = $1 AND isActive = FALSE',
-          [id]
-        );
-        console.log('Неактивная сессия удалена для userId:', id);
-      }
+      console.log('Все сессии удалены для userId:', id);
 
       // Создаём новую сессию
       await pool.query(
@@ -262,8 +254,6 @@ app.post('/api/telegram-login', async (req, res) => {
   });
   res.json({ success: true, message: 'Авторизация успешна' });
 });
-
-
 // Эндпоинт для logout
 app.post('/api/logout', async (req, res) => {
   console.log('Cookies получены:', req.cookies);
