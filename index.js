@@ -179,6 +179,7 @@ io.on('connection', (socket) => {
 
 // Эндпоинт для Telegram Login
 
+
 app.post('/api/telegram-login', async (req, res) => {
   const { id, first_name, last_name, username, photo_url, auth_date, hash } = req.body;
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -225,7 +226,22 @@ app.post('/api/telegram-login', async (req, res) => {
       );
       console.log('Сессия обновлена:', { sessionToken, userId: id });
     } else {
-      // Если активной сессии нет, создаём новую
+      // Проверяем, есть ли неактивная сессия для этого userId
+      const inactiveSession = await pool.query(
+        'SELECT sessionToken FROM sessions WHERE userId = $1 AND isActive = FALSE',
+        [id]
+      );
+
+      if (inactiveSession.rows.length > 0) {
+        // Если есть неактивная сессия, удаляем её
+        await pool.query(
+          'DELETE FROM sessions WHERE userId = $1 AND isActive = FALSE',
+          [id]
+        );
+        console.log('Неактивная сессия удалена для userId:', id);
+      }
+
+      // Создаём новую сессию
       await pool.query(
         'INSERT INTO sessions (sessionToken, userId, isActive) VALUES ($1, $2, TRUE)',
         [sessionToken, id]
@@ -246,6 +262,7 @@ app.post('/api/telegram-login', async (req, res) => {
   });
   res.json({ success: true, message: 'Авторизация успешна' });
 });
+
 
 // Эндпоинт для logout
 app.post('/api/logout', async (req, res) => {
