@@ -178,6 +178,7 @@ io.on('connection', (socket) => {
 });
 
 // Эндпоинт для Telegram Login
+
 app.post('/api/telegram-login', async (req, res) => {
   const { id, first_name, last_name, username, photo_url, auth_date, hash } = req.body;
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -219,21 +220,21 @@ app.post('/api/telegram-login', async (req, res) => {
     if (existingSession.rows.length > 0) {
       // Если активная сессия есть, обновляем её токен
       await pool.query(
-        'UPDATE sessions SET sessionToken = $1, isActive = TRUE WHERE userId = $2',
+        'UPDATE sessions SET sessionToken = $1 WHERE userId = $2 AND isActive = TRUE',
         [sessionToken, id]
       );
       console.log('Сессия обновлена:', { sessionToken, userId: id });
     } else {
       // Если активной сессии нет, создаём новую
       await pool.query(
-        'INSERT INTO sessions (sessionToken, userId, isActive) VALUES ($1, $2, TRUE) ON CONFLICT (userId) DO UPDATE SET sessionToken = $1, isActive = TRUE',
+        'INSERT INTO sessions (sessionToken, userId, isActive) VALUES ($1, $2, TRUE)',
         [sessionToken, id]
       );
       console.log('Сессия сохранена:', { sessionToken, userId: id });
     }
   } catch (err) {
     console.error('Ошибка при сохранении сессии:', err);
-    return res.status(500).json({ success: false, message: 'Ошибка сервера' });
+    return res.status(500).json({ success: false, message: 'Ошибка сервера: ' + err.message });
   }
 
   res.cookie('sessionToken', sessionToken, { 
