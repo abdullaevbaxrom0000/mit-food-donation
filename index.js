@@ -258,6 +258,80 @@ app.post('/api/telegram-login', async (req, res) => {
   res.json({ success: true, message: 'Авторизация успешна' });
 });
 
+
+// Эндпоинт Google Login
+app.post('/api/google-login', async (req, res) => {
+  const { credential } = req.body;
+
+  if (!credential) {
+    return res.status(400).json({ success: false, message: 'Нет данных от Google' });
+  }
+
+  // Здесь нужно декодировать и проверить credential с помощью Google API
+  // Для этого нужен пакет `google-auth-library`
+  const { OAuth2Client } = require('google-auth-library');
+  const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID); // Добавь GOOGLE_CLIENT_ID в .env
+  let payload;
+
+  try {
+    const ticket = await client.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID, // Должен совпадать с Client ID из Google Console
+    });
+    payload = ticket.getPayload();
+  } catch (error) {
+    console.error('Ошибка проверки Google токена:', error);
+    return res.status(400).json({ success: false, message: 'Неверный токен Google' });
+  }
+
+  const { sub: userId, email, name, picture } = payload;
+
+  // Генерируем случайный sessionToken
+  const sessionToken = crypto.randomBytes(16).toString('hex');
+
+  try {
+    // Проверяем, есть ли активная сессия для userId
+    const existingSession = await pool.query(
+      'SELECT id, sessionToken, isActive FROM sessions WHERE userId = $1 AND isActive = TRUE',
+      [userId]
+    );
+
+    if (existingSession.rows.length > 0) {
+      // Обновляем существующую запись
+      await pool.query(
+        'UPDATE sessions SET sessionToken = $1 WHERE userId = $2 AND isActive = TRUE',
+        [sessionToken, userId]
+      );
+      console.log('Сессия обновлена:', { sessionToken, userId });
+    } else {
+      // Удаляем все старые записи для userId
+      await pool.query('DELETE FROM sessions WHERE userId = $1', [userId]);
+      console.log('Все сессии удалены для userId:', userId);
+
+      // Вставляем новую
+      await pool.query(
+        'INSERT INTO sessions (sessionToken, userId, isActive) VALUES ($1, $2, TRUE)',
+        [sessionToken, userId]
+      );
+      console.log('Сессия сохранена:', { sessionToken, userId });
+    }
+  } catch (err) {
+    console.error('Ошибка при сохранении сессии:', err);
+    return res.status(500).json({ success: false, message: 'Ошибка сервера: ' + err.message });
+  }
+
+  // Устанавливаем куку
+  res.cookie('sessionToken', sessionToken, {
+    httpOnly: true,
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 дней
+    sameSite: 'none',
+    secure: true,
+    domain: '.mit-foodcompany.uz'
+  });
+  res.json({ success: true, message: 'Авторизация через Google успешна' });
+});
+
+
 // Эндпоинт logout
 app.post('/api/logout', async (req, res) => {
   console.log('Cookies получены:', req.cookies);
