@@ -316,7 +316,8 @@ app.post('/api/google-login', async (req, res) => {
       console.log('Сессия обновлена:', { sessionToken, userId });
     } else {
       // Удаляем все старые записи для userId
-      await pool.query('DELETE FROM sessions WHERE userId = $1', [userId]);
+      await pool.query('DELETE FROM sessions WHERE userId = $1 AND isActive = FALSE', [userId]);
+
       console.log('Все сессии удалены для userId:', userId);
 
       // Вставляем новую
