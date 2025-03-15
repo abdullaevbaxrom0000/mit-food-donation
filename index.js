@@ -334,6 +334,7 @@ app.post('/api/google-login', async (req, res) => {
 
 // Эндпоинт logout
 app.post('/api/logout', async (req, res) => {
+  console.log('Выход: обработка запроса /api/logout'); // Добавь эту строку
   console.log('Cookies получены:', req.cookies);
   const sessionToken = req.cookies.sessionToken;
 
