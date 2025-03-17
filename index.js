@@ -19,14 +19,11 @@ app.use(cors({
   optionsSuccessStatus: 200
 }));
 
-
 app.use((req, res, next) => {
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
   res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
   next();
 });
-
-
 
 app.use(express.json());
 app.use(cookieParser());
@@ -79,8 +76,6 @@ async function createDonationsTable() {
 
 // 2. Новая схема таблицы sessions: id SERIAL PRIMARY KEY, sessionToken UNIQUE
 async function createSessionsTable() {
-  // Если вы уже создали старую таблицу, придётся дропнуть вручную.
-  // Здесь мы просто создаём таблицу, если её нет.
   const createTableQuery = `
     CREATE TABLE IF NOT EXISTS sessions (
       id SERIAL PRIMARY KEY,
@@ -129,7 +124,7 @@ async function updateDonationInDB(donationId, incrementValue) {
 (async () => {
   try {
     await createDonationsTable();
-    await createSessionsTable(); // <-- Новая схема sessions
+    await createSessionsTable();
     await loadDonationsFromDB();
   } catch (err) {
     console.error('Ошибка при инициализации базы:', err);
@@ -223,29 +218,24 @@ app.post('/api/telegram-login', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Сессия истекла' });
   }
 
-  // Генерируем случайный токен (крайне маловероятно, но возможна коллизия)
   const sessionToken = crypto.randomBytes(16).toString('hex');
 
   try {
-    // Проверяем, есть ли активная сессия для userId
     const existingSession = await pool.query(
       'SELECT id, sessionToken, isActive FROM sessions WHERE userId = $1 AND isActive = TRUE',
       [id]
     );
 
     if (existingSession.rows.length > 0) {
-      // Обновляем существующую запись
       await pool.query(
         'UPDATE sessions SET sessionToken = $1 WHERE userId = $2 AND isActive = TRUE',
         [sessionToken, id]
       );
       console.log('Сессия обновлена:', { sessionToken, userId: id });
     } else {
-      // Удаляем все старые записи для userId
       await pool.query('DELETE FROM sessions WHERE userId = $1', [id]);
       console.log('Все сессии удалены для userId:', id);
 
-      // Вставляем новую
       await pool.query(
         'INSERT INTO sessions (sessionToken, userId, isActive) VALUES ($1, $2, TRUE)',
         [sessionToken, id]
@@ -257,7 +247,6 @@ app.post('/api/telegram-login', async (req, res) => {
     return res.status(500).json({ success: false, message: 'Ошибка сервера: ' + err.message });
   }
 
-  // Устанавливаем куку
   res.cookie('sessionToken', sessionToken, {
     httpOnly: true,
     maxAge: 7 * 24 * 60 * 60 * 1000,
@@ -268,7 +257,6 @@ app.post('/api/telegram-login', async (req, res) => {
   res.json({ success: true, message: 'Авторизация успешна' });
 });
 
-
 // Эндпоинт Google Login
 app.post('/api/google-login', async (req, res) => {
   const { credential } = req.body;
@@ -277,16 +265,14 @@ app.post('/api/google-login', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Нет данных от Google' });
   }
 
-  // Здесь нужно декодировать и проверить credential с помощью Google API
-  // Для этого нужен пакет `google-auth-library`
   const { OAuth2Client } = require('google-auth-library');
-  const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID); // Добавь GOOGLE_CLIENT_ID в .env
+  const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
   let payload;
 
   try {
     const ticket = await client.verifyIdToken({
       idToken: credential,
-      audience: process.env.GOOGLE_CLIENT_ID, // Должен совпадать с Client ID из Google Console
+      audience: process.env.GOOGLE_CLIENT_ID,
     });
     payload = ticket.getPayload();
   } catch (error) {
@@ -296,30 +282,24 @@ app.post('/api/google-login', async (req, res) => {
 
   const { sub: userId, email, name, picture } = payload;
 
-  // Генерируем случайный sessionToken
   const sessionToken = crypto.randomBytes(16).toString('hex');
 
   try {
-    // Проверяем, есть ли активная сессия для userId
     const existingSession = await pool.query(
       'SELECT id, sessionToken, isActive FROM sessions WHERE userId = $1 AND isActive = TRUE',
       [userId]
     );
 
     if (existingSession.rows.length > 0) {
-      // Обновляем существующую запись
       await pool.query(
         'UPDATE sessions SET sessionToken = $1 WHERE userId = $2 AND isActive = TRUE',
         [sessionToken, userId]
       );
       console.log('Сессия обновлена:', { sessionToken, userId });
     } else {
-      // Удаляем все старые записи для userId
       await pool.query('DELETE FROM sessions WHERE userId = $1 AND isActive = FALSE', [userId]);
-
       console.log('Все сессии удалены для userId:', userId);
 
-      // Вставляем новую
       await pool.query(
         'INSERT INTO sessions (sessionToken, userId, isActive) VALUES ($1, $2, TRUE)',
         [sessionToken, userId]
@@ -331,10 +311,9 @@ app.post('/api/google-login', async (req, res) => {
     return res.status(500).json({ success: false, message: 'Ошибка сервера: ' + err.message });
   }
 
-  // Устанавливаем куку
   res.cookie('sessionToken', sessionToken, {
     httpOnly: true,
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 дней
+    maxAge: 7 * 24 * 60 * 60 * 1000,
     sameSite: 'none',
     secure: true,
     domain: '.mit-foodcompany.uz'
@@ -342,10 +321,9 @@ app.post('/api/google-login', async (req, res) => {
   res.json({ success: true, message: 'Авторизация через Google успешна' });
 });
 
-
 // Эндпоинт logout
 app.post('/api/logout', async (req, res) => {
-  console.log('Выход: обработка запроса /api/logout'); // Добавь эту строку
+  console.log('Выход: обработка запроса /api/logout');
   console.log('Cookies получены:', req.cookies);
   const sessionToken = req.cookies.sessionToken;
 
@@ -363,7 +341,6 @@ app.post('/api/logout', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Сессия не найдена' });
     }
 
-    // Очищаем куку
     res.clearCookie('sessionToken', {
       sameSite: 'none',
       secure: true,
@@ -373,6 +350,31 @@ app.post('/api/logout', async (req, res) => {
   } catch (err) {
     console.error('Ошибка при выходе:', err);
     res.status(500).json({ success: false, message: 'Ошибка сервера' });
+  }
+});
+
+// Эндпоинт для проверки статуса авторизации
+app.get('/api/check-auth', async (req, res) => {
+  const sessionToken = req.cookies.sessionToken;
+
+  if (!sessionToken) {
+    return res.json({ isAuthenticated: false });
+  }
+
+  try {
+    const result = await pool.query(
+      'SELECT * FROM sessions WHERE sessionToken = $1 AND isActive = TRUE',
+      [sessionToken]
+    );
+
+    if (result.rows.length > 0) {
+      res.json({ isAuthenticated: true });
+    } else {
+      res.json({ isAuthenticated: false });
+    }
+  } catch (err) {
+    console.error('Ошибка при проверке сессии:', err);
+    res.status(500).json({ isAuthenticated: false, message: 'Ошибка сервера' });
   }
 });
 
