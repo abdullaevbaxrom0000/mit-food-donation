@@ -429,6 +429,8 @@ app.post('/api/logout', async (req, res) => {
 
 // Эндпоинт для создания заказа и начисления кэшбэка
 app.post('/api/create-order', async (req, res) => {
+  console.log("req.body в create-order:", req.body);
+
   const { orderAmount } = req.body; // Сумма заказа от фронтенда
   const sessionToken = req.cookies.sessionToken;
 
