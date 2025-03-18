@@ -561,6 +561,8 @@ app.get('/api/cashback/history', async (req, res) => {
       'SELECT id, orderId, orderAmount, cashbackAmount, createdAt FROM cashback_history WHERE userId = $1 ORDER BY createdAt DESC',
       [userId]
     );
+    
+    console.log("История кешбэка из БД:", rowsFromDB); // тут да нужно вставить?
 
     res.json({
       success: true,
