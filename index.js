@@ -558,7 +558,7 @@ app.get('/api/cashback/history', async (req, res) => {
 
     // Получаем историю кэшбэка
     const history = await pool.query(
-      'SELECT id, orderId, orderAmount, cashbackAmount, createdAt FROM cashback_history WHERE userId = $1 ORDER BY createdAt DESC',
+      'SELECT id, orderId, orderAmount, cashbackAmount, createdat AS "createdAt",  userid FROM cashback_history WHERE userId = $1 ORDER BY createdAt DESC',
       [userId]
     );
     
