@@ -89,6 +89,41 @@ async function createSessionsTable() {
   console.log('Таблица sessions создана или уже существует.');
 }
 
+
+// Создание таблицы users (если ещё не создана)
+async function createUsersTable() {
+  const createTableQuery = `
+    CREATE TABLE IF NOT EXISTS users (
+      userId VARCHAR(255) PRIMARY KEY,
+      username VARCHAR(255),
+      email VARCHAR(255),
+      phone VARCHAR(20),
+      level VARCHAR(50) DEFAULT 'Стартер',
+      total_cashback FLOAT DEFAULT 0,
+      createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `;
+  await pool.query(createTableQuery);
+  console.log('Таблица users создана или уже существует.');
+}
+
+// Создание таблицы cashback_history
+async function createCashbackHistoryTable() {
+  const createTableQuery = `
+    CREATE TABLE IF NOT EXISTS cashback_history (
+      id SERIAL PRIMARY KEY,
+      userId VARCHAR(255) REFERENCES users(userId),
+      orderId VARCHAR(255),
+      orderAmount FLOAT NOT NULL,
+      cashbackAmount FLOAT NOT NULL,
+      createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `;
+  await pool.query(createTableQuery);
+  console.log('Таблица cashback_history создана или уже существует.');
+}
+
+
 // 3. Загрузка донатов из базы
 async function loadDonationsFromDB() {
   const result = await pool.query('SELECT donationId, count FROM donations');
@@ -125,6 +160,8 @@ async function updateDonationInDB(donationId, incrementValue) {
   try {
     await createDonationsTable();
     await createSessionsTable();
+    await createUsersTable(); // Добавляем создание таблицы users
+    await createCashbackHistoryTable(); // Добавляем создание таблицы cashback_history
     await loadDonationsFromDB();
   } catch (err) {
     console.error('Ошибка при инициализации базы:', err);
@@ -218,6 +255,24 @@ app.post('/api/telegram-login', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Сессия истекла' });
   }
 
+
+// Добавляем пользователя в таблицу users, если его там нет
+try {
+  const userCheck = await pool.query('SELECT * FROM users WHERE userId = $1', [id]);
+  if (userCheck.rows.length === 0) {
+    await pool.query(
+      'INSERT INTO users (userId, username, phone) VALUES ($1, $2, $3)',
+      [id, username || `${first_name} ${last_name}`, '+998991234567'] // Телефон захардкожен, можно потом заменить
+    );
+    console.log('Пользователь добавлен в таблицу users:', { userId: id, username: username || `${first_name} ${last_name}` });
+  } else {
+    console.log('Пользователь уже существует:', { userId: id });
+  }
+} catch (err) {
+  console.error('Ошибка при сохранении пользователя:', err);
+  return res.status(500).json({ success: false, message: 'Ошибка при сохранении пользователя' });
+}
+
   const sessionToken = crypto.randomBytes(16).toString('hex');
 
   try {
@@ -281,6 +336,24 @@ app.post('/api/google-login', async (req, res) => {
   }
 
   const { sub: userId, email, name, picture } = payload;
+
+
+// Добавляем пользователя в таблицу users, если его там нет
+try {
+  const userCheck = await pool.query('SELECT * FROM users WHERE userId = $1', [userId]);
+  if (userCheck.rows.length === 0) {
+    await pool.query(
+      'INSERT INTO users (userId, username, email) VALUES ($1, $2, $3)',
+      [userId, name, email]
+    );
+    console.log('Пользователь добавлен в таблицу users:', { userId, username: name });
+  } else {
+    console.log('Пользователь уже существует:', { userId });
+  }
+} catch (err) {
+  console.error('Ошибка при сохранении пользователя:', err);
+  return res.status(500).json({ success: false, message: 'Ошибка при сохранении пользователя' });
+}
 
   const sessionToken = crypto.randomBytes(16).toString('hex');
 
@@ -352,6 +425,151 @@ app.post('/api/logout', async (req, res) => {
     res.status(500).json({ success: false, message: 'Ошибка сервера' });
   }
 });
+
+
+// Эндпоинт для создания заказа и начисления кэшбэка
+app.post('/api/create-order', async (req, res) => {
+  const { orderAmount } = req.body; // Сумма заказа от фронтенда
+  const sessionToken = req.cookies.sessionToken;
+
+  if (!sessionToken) {
+    return res.status(401).json({ success: false, message: 'Не авторизован' });
+  }
+
+  if (!orderAmount || orderAmount <= 0) {
+    return res.status(400).json({ success: false, message: 'Некорректная сумма заказа' });
+  }
+
+  try {
+    // Проверяем сессию
+    const session = await pool.query(
+      'SELECT userId FROM sessions WHERE sessionToken = $1 AND isActive = TRUE',
+      [sessionToken]
+    );
+
+    if (session.rows.length === 0) {
+      return res.status(401).json({ success: false, message: 'Сессия недействительна' });
+    }
+
+    const userId = session.rows[0].userid;
+
+    // Получаем уровень пользователя для расчёта кэшбэка
+    const user = await pool.query('SELECT level FROM users WHERE userId = $1', [userId]);
+    if (user.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Пользователь не найден' });
+    }
+
+    const userLevel = user.rows[0].level;
+    const cashbackRate = userLevel === 'Стартер' ? 0.05 : 0.10; // 5% для Стартера, 10% для других уровней (можно расширить)
+    const cashbackAmount = orderAmount * cashbackRate;
+
+    // Генерируем уникальный orderId
+    const orderId = crypto.randomBytes(8).toString('hex');
+
+    // Сохраняем информацию о заказе и кэшбэке в cashback_history
+    await pool.query(
+      'INSERT INTO cashback_history (userId, orderId, orderAmount, cashbackAmount) VALUES ($1, $2, $3, $4)',
+      [userId, orderId, orderAmount, cashbackAmount]
+    );
+
+    // Обновляем общую сумму кэшбэка в таблице users
+    await pool.query(
+      'UPDATE users SET total_cashback = total_cashback + $1 WHERE userId = $2',
+      [cashbackAmount, userId]
+    );
+
+    console.log('Заказ создан, кэшбэк начислен:', { userId, orderId, orderAmount, cashbackAmount });
+
+    res.json({ success: true, message: 'Заказ создан, кэшбэк начислен', cashbackAmount });
+  } catch (err) {
+    console.error('Ошибка при создании заказа:', err);
+    res.status(500).json({ success: false, message: 'Ошибка сервера: ' + err.message });
+  }
+});
+
+
+// Эндпоинт для получения данных пользователя (включая кэшбэк)
+app.get('/api/user', async (req, res) => {
+  const sessionToken = req.cookies.sessionToken;
+
+  if (!sessionToken) {
+    return res.status(401).json({ success: false, message: 'Не авторизован' });
+  }
+
+  try {
+    // Проверяем сессию
+    const session = await pool.query(
+      'SELECT userId FROM sessions WHERE sessionToken = $1 AND isActive = TRUE',
+      [sessionToken]
+    );
+
+    if (session.rows.length === 0) {
+      return res.status(401).json({ success: false, message: 'Сессия недействительна' });
+    }
+
+    const userId = session.rows[0].userid;
+
+    // Получаем данные пользователя
+    const user = await pool.query(
+      'SELECT username, email, phone, level, total_cashback FROM users WHERE userId = $1',
+      [userId]
+    );
+
+    if (user.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Пользователь не найден' });
+    }
+
+    res.json({
+      success: true,
+      username: user.rows[0].username,
+      email: user.rows[0].email,
+      phone: user.rows[0].phone,
+      level: user.rows[0].level,
+      total_cashback: user.rows[0].total_cashback,
+    });
+  } catch (err) {
+    console.error('Ошибка при получении данных пользователя:', err);
+    res.status(500).json({ success: false, message: 'Ошибка сервера: ' + err.message });
+  }
+});
+
+// Эндпоинт для получения истории кэшбэка
+app.get('/api/cashback/history', async (req, res) => {
+  const sessionToken = req.cookies.sessionToken;
+
+  if (!sessionToken) {
+    return res.status(401).json({ success: false, message: 'Не авторизован' });
+  }
+
+  try {
+    // Проверяем сессию
+    const session = await pool.query(
+      'SELECT userId FROM sessions WHERE sessionToken = $1 AND isActive = TRUE',
+      [sessionToken]
+    );
+
+    if (session.rows.length === 0) {
+      return res.status(401).json({ success: false, message: 'Сессия недействительна' });
+    }
+
+    const userId = session.rows[0].userid;
+
+    // Получаем историю кэшбэка
+    const history = await pool.query(
+      'SELECT id, orderId, orderAmount, cashbackAmount, createdAt FROM cashback_history WHERE userId = $1 ORDER BY createdAt DESC',
+      [userId]
+    );
+
+    res.json({
+      success: true,
+      history: history.rows,
+    });
+  } catch (err) {
+    console.error('Ошибка при получении истории кэшбэка:', err);
+    res.status(500).json({ success: false, message: 'Ошибка сервера: ' + err.message });
+  }
+});
+
 
 // Эндпоинт для проверки статуса авторизации
 app.get('/api/check-auth', async (req, res) => {
