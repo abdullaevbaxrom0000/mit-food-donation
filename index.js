@@ -562,7 +562,7 @@ app.get('/api/cashback/history', async (req, res) => {
       [userId]
     );
     
-    console.log("История кешбэка из БД:", rowsFromDB); // тут да нужно вставить?
+    console.log("История кешбэка из БД:", history.rows); // тут да нужно вставить?
 
     res.json({
       success: true,
