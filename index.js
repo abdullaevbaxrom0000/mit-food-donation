@@ -353,13 +353,19 @@ try {
   const userCheck = await pool.query('SELECT * FROM users WHERE userId = $1', [userId]);
   if (userCheck.rows.length === 0) {
     await pool.query(
-      'INSERT INTO users (userId, username, email) VALUES ($1, $2, $3)',
-      [userId, name, email]
+      'INSERT INTO users (userId, username, email, avatar_url) VALUES ($1, $2, $3, $4)',
+      [userId, name, email, picture]
     );
-    console.log('Пользователь добавлен в таблицу users:', { userId, username: name });
+    console.log('Пользователь добавлен в таблицу users:', { userId, username: name, avatar_url: picture });
   } else {
-    console.log('Пользователь уже существует:', { userId });
+    // Обновляем аватар если пользователь уже существует
+    await pool.query(
+      'UPDATE users SET avatar_url = $1 WHERE userId = $2',
+      [picture, userId]
+    );
+    console.log('Аватар пользователя обновлён:', { userId, avatar_url: picture });
   }
+  
 } catch (err) {
   console.error('Ошибка при сохранении пользователя:', err);
   return res.status(500).json({ success: false, message: 'Ошибка при сохранении пользователя' });
