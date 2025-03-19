@@ -612,3 +612,14 @@ process.on('SIGTERM', async () => {
   console.log('Соединение с базой закрыто.');
   process.exit(0);
 });
+
+
+app.get("/api/get-donations", (req, res) => {
+  const donations = {
+    1: 20,
+    2: 7,
+    3: 10,
+    4: 3
+  };
+  res.json(donations);
+});
