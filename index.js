@@ -7,7 +7,7 @@ const { Server } = require('socket.io');
 const path = require('path');
 const cors = require('cors');
 const crypto = require('crypto');
-const cookieParser = require('cookie-parser'); // Для парсинга cookies
+const cookieParser = require('cookie-parser');
 
 const app = express();
 
@@ -38,19 +38,67 @@ const io = new Server(server, {
   }
 });
 
-const pool = new Pool({
+// Настройка пула соединений с параметрами
+let pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false },
+  max: 20, // Максимальное количество соединений
+  idleTimeoutMillis: 30000, // Время простоя перед закрытием (30 секунд)
+  connectionTimeoutMillis: 5000, // Таймаут на установку соединения (5 секунд)
 });
 
-pool.connect()
-  .then(() => console.log('Подключение к базе установлено'))
-  .catch(err => console.error('Ошибка подключения к базе:', err));
+// Обработка ошибок пула
+pool.on('error', (err, client) => {
+  console.error('Ошибка в пуле соединений:', err.stack);
+});
+
+// Функция проверки и восстановления соединения
+async function ensureConnection() {
+  try {
+    await pool.query('SELECT 1');
+    console.log('Соединение с базой активно');
+  } catch (err) {
+    console.error('Соединение с базой потеряно, пытаемся переподключиться:', err.stack);
+    try {
+      await pool.end();
+      pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: { rejectUnauthorized: false },
+        max: 20,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 5000,
+      });
+      pool.on('error', (err, client) => {
+        console.error('Ошибка в новом пуле соединений:', err.stack);
+      });
+      console.log('Переподключение успешно');
+    } catch (reconnectErr) {
+      console.error('Не удалось переподключиться:', reconnectErr.stack);
+    }
+  }
+}
+
+// Проверяем соединение при старте и каждые 5 минут
+ensureConnection();
+setInterval(ensureConnection, 5 * 60 * 1000);
+
+// Функция для запросов с повторными попытками
+async function queryWithRetry(query, params, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await pool.query(query, params);
+    } catch (err) {
+      console.error(`Ошибка запроса (попытка ${i + 1}/${retries}):`, err.stack);
+      if (i === retries - 1) throw err;
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+}
 
 // Храним донаты в памяти
 let donations = {};
 
-// 1. Создание таблицы донатов (без изменений)
+// 1. Создание таблицы донатов
 async function createDonationsTable() {
   const createTableQuery = `
     CREATE TABLE IF NOT EXISTS donations (
@@ -58,23 +106,23 @@ async function createDonationsTable() {
       count INT NOT NULL DEFAULT 0
     );
   `;
-  await pool.query(createTableQuery);
+  await queryWithRetry(createTableQuery, []);
 
-  const checkRows = await pool.query('SELECT donationId FROM donations');
+  const checkRows = await queryWithRetry('SELECT donationId FROM donations', []);
   if (checkRows.rows.length === 0) {
     const insertDefaults = `
       INSERT INTO donations (donationId, count)
       VALUES (1, 20), (2, 7), (3, 10), (4, 3)
       ON CONFLICT (donationId) DO UPDATE SET count = EXCLUDED.count;
     `;
-    await pool.query(insertDefaults);
+    await queryWithRetry(insertDefaults, []);
     console.log('Вставлены начальные данные по донатам.');
   } else {
     console.log('Таблица donations уже содержит данные.');
   }
 }
 
-// 2. Новая схема таблицы sessions: id SERIAL PRIMARY KEY, sessionToken UNIQUE
+// 2. Создание таблицы sessions
 async function createSessionsTable() {
   const createTableQuery = `
     CREATE TABLE IF NOT EXISTS sessions (
@@ -85,12 +133,11 @@ async function createSessionsTable() {
       isActive BOOLEAN DEFAULT TRUE
     );
   `;
-  await pool.query(createTableQuery);
+  await queryWithRetry(createTableQuery, []);
   console.log('Таблица sessions создана или уже существует.');
 }
 
-
-// Создание таблицы users (если ещё не создана)
+// 3. Создание таблицы users
 async function createUsersTable() {
   const createTableQuery = `
     CREATE TABLE IF NOT EXISTS users (
@@ -103,11 +150,11 @@ async function createUsersTable() {
       createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
   `;
-  await pool.query(createTableQuery);
+  await queryWithRetry(createTableQuery, []);
   console.log('Таблица users создана или уже существует.');
 }
 
-// Создание таблицы cashback_history
+// 4. Создание таблицы cashback_history
 async function createCashbackHistoryTable() {
   const createTableQuery = `
     CREATE TABLE IF NOT EXISTS cashback_history (
@@ -119,14 +166,13 @@ async function createCashbackHistoryTable() {
       createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
   `;
-  await pool.query(createTableQuery);
+  await queryWithRetry(createTableQuery, []);
   console.log('Таблица cashback_history создана или уже существует.');
 }
 
-
-// 3. Загрузка донатов из базы
+// 5. Загрузка донатов из базы
 async function loadDonationsFromDB() {
-  const result = await pool.query('SELECT donationId, count FROM donations');
+  const result = await queryWithRetry('SELECT donationId, count FROM donations', []);
   const temp = {};
   result.rows.forEach(row => {
     const id = parseInt(row.donationid, 10);
@@ -147,9 +193,9 @@ async function loadDonationsFromDB() {
   }
 }
 
-// 4. Обновление донатов в базе
+// 6. Обновление донатов в базе
 async function updateDonationInDB(donationId, incrementValue) {
-  await pool.query(
+  await queryWithRetry(
     'UPDATE donations SET count = count + $1 WHERE donationId = $2',
     [incrementValue, donationId]
   );
@@ -160,13 +206,18 @@ async function updateDonationInDB(donationId, incrementValue) {
   try {
     await createDonationsTable();
     await createSessionsTable();
-    await createUsersTable(); // Добавляем создание таблицы users
-    await createCashbackHistoryTable(); // Добавляем создание таблицы cashback_history
+    await createUsersTable();
+    await createCashbackHistoryTable();
     await loadDonationsFromDB();
   } catch (err) {
     console.error('Ошибка при инициализации базы:', err);
   }
 })();
+
+// Эндпоинт для пинга (чтобы сервер не "засыпал")
+app.get('/ping', (req, res) => {
+  res.status(200).send('Server is alive');
+});
 
 // Отдаём index.html
 app.get('/', (req, res) => {
@@ -255,43 +306,41 @@ app.post('/api/telegram-login', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Сессия истекла' });
   }
 
-
-// Добавляем пользователя в таблицу users, если его там нет
-try {
-  const userCheck = await pool.query('SELECT * FROM users WHERE userId = $1', [id]);
-  if (userCheck.rows.length === 0) {
-    await pool.query(
-      'INSERT INTO users (userId, username, phone) VALUES ($1, $2, $3)',
-      [id, username || `${first_name} ${last_name}`, '+998991234567'] // Телефон захардкожен, можно потом заменить
-    );
-    console.log('Пользователь добавлен в таблицу users:', { userId: id, username: username || `${first_name} ${last_name}` });
-  } else {
-    console.log('Пользователь уже существует:', { userId: id });
+  try {
+    const userCheck = await queryWithRetry('SELECT * FROM users WHERE userId = $1', [id]);
+    if (userCheck.rows.length === 0) {
+      await queryWithRetry(
+        'INSERT INTO users (userId, username, phone) VALUES ($1, $2, $3)',
+        [id, username || `${first_name} ${last_name}`, '+998991234567']
+      );
+      console.log('Пользователь добавлен в таблицу users:', { userId: id, username: username || `${first_name} ${last_name}` });
+    } else {
+      console.log('Пользователь уже существует:', { userId: id });
+    }
+  } catch (err) {
+    console.error('Ошибка при сохранении пользователя:', err);
+    return res.status(500).json({ success: false, message: 'Ошибка при сохранении пользователя' });
   }
-} catch (err) {
-  console.error('Ошибка при сохранении пользователя:', err);
-  return res.status(500).json({ success: false, message: 'Ошибка при сохранении пользователя' });
-}
 
   const sessionToken = crypto.randomBytes(16).toString('hex');
 
   try {
-    const existingSession = await pool.query(
+    const existingSession = await queryWithRetry(
       'SELECT id, sessionToken, isActive FROM sessions WHERE userId = $1 AND isActive = TRUE',
       [id]
     );
 
     if (existingSession.rows.length > 0) {
-      await pool.query(
+      await queryWithRetry(
         'UPDATE sessions SET sessionToken = $1 WHERE userId = $2 AND isActive = TRUE',
         [sessionToken, id]
       );
       console.log('Сессия обновлена:', { sessionToken, userId: id });
     } else {
-      await pool.query('DELETE FROM sessions WHERE userId = $1', [id]);
+      await queryWithRetry('DELETE FROM sessions WHERE userId = $1', [id]);
       console.log('Все сессии удалены для userId:', id);
 
-      await pool.query(
+      await queryWithRetry(
         'INSERT INTO sessions (sessionToken, userId, isActive) VALUES ($1, $2, TRUE)',
         [sessionToken, id]
       );
@@ -337,43 +386,41 @@ app.post('/api/google-login', async (req, res) => {
 
   const { sub: userId, email, name, picture } = payload;
 
-
-// Добавляем пользователя в таблицу users, если его там нет
-try {
-  const userCheck = await pool.query('SELECT * FROM users WHERE userId = $1', [userId]);
-  if (userCheck.rows.length === 0) {
-    await pool.query(
-      'INSERT INTO users (userId, username, email) VALUES ($1, $2, $3)',
-      [userId, name, email]
-    );
-    console.log('Пользователь добавлен в таблицу users:', { userId, username: name });
-  } else {
-    console.log('Пользователь уже существует:', { userId });
+  try {
+    const userCheck = await queryWithRetry('SELECT * FROM users WHERE userId = $1', [userId]);
+    if (userCheck.rows.length === 0) {
+      await queryWithRetry(
+        'INSERT INTO users (userId, username, email) VALUES ($1, $2, $3)',
+        [userId, name, email]
+      );
+      console.log('Пользователь добавлен в таблицу users:', { userId, username: name });
+    } else {
+      console.log('Пользователь уже существует:', { userId });
+    }
+  } catch (err) {
+    console.error('Ошибка при сохранении пользователя:', err);
+    return res.status(500).json({ success: false, message: 'Ошибка при сохранении пользователя' });
   }
-} catch (err) {
-  console.error('Ошибка при сохранении пользователя:', err);
-  return res.status(500).json({ success: false, message: 'Ошибка при сохранении пользователя' });
-}
 
   const sessionToken = crypto.randomBytes(16).toString('hex');
 
   try {
-    const existingSession = await pool.query(
+    const existingSession = await queryWithRetry(
       'SELECT id, sessionToken, isActive FROM sessions WHERE userId = $1 AND isActive = TRUE',
       [userId]
     );
 
     if (existingSession.rows.length > 0) {
-      await pool.query(
+      await queryWithRetry(
         'UPDATE sessions SET sessionToken = $1 WHERE userId = $2 AND isActive = TRUE',
         [sessionToken, userId]
       );
       console.log('Сессия обновлена:', { sessionToken, userId });
     } else {
-      await pool.query('DELETE FROM sessions WHERE userId = $1 AND isActive = FALSE', [userId]);
+      await queryWithRetry('DELETE FROM sessions WHERE userId = $1 AND isActive = FALSE', [userId]);
       console.log('Все сессии удалены для userId:', userId);
 
-      await pool.query(
+      await queryWithRetry(
         'INSERT INTO sessions (sessionToken, userId, isActive) VALUES ($1, $2, TRUE)',
         [sessionToken, userId]
       );
@@ -405,7 +452,7 @@ app.post('/api/logout', async (req, res) => {
   }
 
   try {
-    const result = await pool.query(
+    const result = await queryWithRetry(
       'UPDATE sessions SET isActive = FALSE WHERE sessionToken = $1 RETURNING *',
       [sessionToken]
     );
@@ -426,12 +473,11 @@ app.post('/api/logout', async (req, res) => {
   }
 });
 
-
 // Эндпоинт для создания заказа и начисления кэшбэка
 app.post('/api/create-order', async (req, res) => {
   console.log("req.body в create-order:", req.body);
 
-  const { orderAmount, orderName } = req.body; // Сумма заказа от фронтенда
+  const { orderAmount, orderName } = req.body;
   const sessionToken = req.cookies.sessionToken;
 
   if (!sessionToken) {
@@ -443,8 +489,7 @@ app.post('/api/create-order', async (req, res) => {
   }
 
   try {
-    // Проверяем сессию
-    const session = await pool.query(
+    const session = await queryWithRetry(
       'SELECT userId FROM sessions WHERE sessionToken = $1 AND isActive = TRUE',
       [sessionToken]
     );
@@ -455,27 +500,23 @@ app.post('/api/create-order', async (req, res) => {
 
     const userId = session.rows[0].userid;
 
-    // Получаем уровень пользователя для расчёта кэшбэка
-    const user = await pool.query('SELECT level FROM users WHERE userId = $1', [userId]);
+    const user = await queryWithRetry('SELECT level FROM users WHERE userId = $1', [userId]);
     if (user.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Пользователь не найден' });
     }
 
     const userLevel = user.rows[0].level;
-    const cashbackRate = userLevel === 'Стартер' ? 0.05 : 0.10; // 5% для Стартера, 10% для других уровней (можно расширить)
+    const cashbackRate = userLevel === 'Стартер' ? 0.05 : 0.10;
     const cashbackAmount = orderAmount * cashbackRate;
 
-    // Генерируем уникальный orderId
     const orderId = crypto.randomBytes(8).toString('hex');
 
-    // Сохраняем информацию о заказе и кэшбэке в cashback_history
-    await pool.query(
+    await queryWithRetry(
       'INSERT INTO cashback_history (userId, orderId, orderAmount, cashbackAmount, "orderName") VALUES ($1, $2, $3, $4, $5)',
       [userId, orderId, orderAmount, cashbackAmount, orderName]
     );
 
-    // Обновляем общую сумму кэшбэка в таблице users
-    await pool.query(
+    await queryWithRetry(
       'UPDATE users SET total_cashback = total_cashback + $1 WHERE userId = $2',
       [cashbackAmount, userId]
     );
@@ -489,7 +530,6 @@ app.post('/api/create-order', async (req, res) => {
   }
 });
 
-
 // Эндпоинт для получения данных пользователя (включая кэшбэк)
 app.get('/api/user', async (req, res) => {
   const sessionToken = req.cookies.sessionToken;
@@ -499,8 +539,7 @@ app.get('/api/user', async (req, res) => {
   }
 
   try {
-    // Проверяем сессию
-    const session = await pool.query(
+    const session = await queryWithRetry(
       'SELECT userId FROM sessions WHERE sessionToken = $1 AND isActive = TRUE',
       [sessionToken]
     );
@@ -511,8 +550,7 @@ app.get('/api/user', async (req, res) => {
 
     const userId = session.rows[0].userid;
 
-    // Получаем данные пользователя
-    const user = await pool.query(
+    const user = await queryWithRetry(
       'SELECT username, email, phone, level, total_cashback FROM users WHERE userId = $1',
       [userId]
     );
@@ -544,8 +582,7 @@ app.get('/api/cashback/history', async (req, res) => {
   }
 
   try {
-    // Проверяем сессию
-    const session = await pool.query(
+    const session = await queryWithRetry(
       'SELECT userId FROM sessions WHERE sessionToken = $1 AND isActive = TRUE',
       [sessionToken]
     );
@@ -556,13 +593,12 @@ app.get('/api/cashback/history', async (req, res) => {
 
     const userId = session.rows[0].userid;
 
-    // Получаем историю кэшбэка
-    const history = await pool.query(
-      'SELECT id, orderId AS "orderId", "orderName" AS "orderName", orderAmount AS "orderAmount", cashbackAmount AS "cashbackAmount", createdat AS "createdAt",  userid FROM cashback_history WHERE userId = $1 ORDER BY "createdAt" DESC',
+    const history = await queryWithRetry(
+      'SELECT id, orderId AS "orderId", "orderName" AS "orderName", orderAmount AS "orderAmount", cashbackAmount AS "cashbackAmount", createdat AS "createdAt", userid FROM cashback_history WHERE userId = $1 ORDER BY "createdAt" DESC',
       [userId]
     );
-    
-    console.log("История кешбэка из БД:", history.rows); // тут да нужно вставить?
+
+    console.log("История кешбэка из БД:", history.rows);
 
     res.json({
       success: true,
@@ -574,7 +610,6 @@ app.get('/api/cashback/history', async (req, res) => {
   }
 });
 
-
 // Эндпоинт для проверки статуса авторизации
 app.get('/api/check-auth', async (req, res) => {
   const sessionToken = req.cookies.sessionToken;
@@ -584,7 +619,7 @@ app.get('/api/check-auth', async (req, res) => {
   }
 
   try {
-    const result = await pool.query(
+    const result = await queryWithRetry(
       'SELECT * FROM sessions WHERE sessionToken = $1 AND isActive = TRUE',
       [sessionToken]
     );
@@ -600,6 +635,17 @@ app.get('/api/check-auth', async (req, res) => {
   }
 });
 
+// Эндпоинт для получения донатов (заменяем захардкоженные данные на данные из БД)
+app.get("/api/get-donations", async (req, res) => {
+  try {
+    await loadDonationsFromDB(); // Обновляем данные из БД
+    res.json(donations);
+  } catch (err) {
+    console.error('Ошибка при получении донатов:', err);
+    res.status(500).json({ success: false, message: 'Ошибка сервера' });
+  }
+});
+
 const port = process.env.PORT || 10000;
 server.listen(port, () => {
   console.log(`Сервер запущен на порту ${port}`);
@@ -611,15 +657,4 @@ process.on('SIGTERM', async () => {
   await pool.end();
   console.log('Соединение с базой закрыто.');
   process.exit(0);
-});
-
-
-app.get("/api/get-donations", (req, res) => {
-  const donations = {
-    1: 20,
-    2: 7,
-    3: 10,
-    4: 3
-  };
-  res.json(donations);
 });
