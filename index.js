@@ -345,6 +345,7 @@ app.post('/api/google-login', async (req, res) => {
   }
 
   const { sub: userId, email, name, picture } = payload;
+  console.log('Google picture:', picture); // Добавьте эту строку
 
 
 // Добавляем пользователя в таблицу users, если его там нет
