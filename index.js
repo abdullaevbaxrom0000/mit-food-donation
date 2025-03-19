@@ -522,9 +522,10 @@ app.get('/api/user', async (req, res) => {
 
     // Получаем данные пользователя
     const user = await pool.query(
-      'SELECT username, email, phone, level, total_cashback FROM users WHERE userId = $1',
+      'SELECT username, email, phone, level, total_cashback, avatar_url FROM users WHERE userId = $1',
       [userId]
     );
+    
 
     if (user.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Пользователь не найден' });
@@ -537,6 +538,7 @@ app.get('/api/user', async (req, res) => {
       phone: user.rows[0].phone,
       level: user.rows[0].level,
       total_cashback: user.rows[0].total_cashback,
+      avatar_url: user.rows[0].avatar_url
     });
   } catch (err) {
     console.error('Ошибка при получении данных пользователя:', err);
