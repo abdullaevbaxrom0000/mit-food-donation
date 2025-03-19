@@ -431,7 +431,7 @@ app.post('/api/logout', async (req, res) => {
 app.post('/api/create-order', async (req, res) => {
   console.log("req.body в create-order:", req.body);
 
-  const { orderAmount,orderName } = req.body; // Сумма заказа от фронтенда
+  const { orderAmount, orderName } = req.body; // Сумма заказа от фронтенда
   const sessionToken = req.cookies.sessionToken;
 
   if (!sessionToken) {
@@ -470,7 +470,7 @@ app.post('/api/create-order', async (req, res) => {
 
     // Сохраняем информацию о заказе и кэшбэке в cashback_history
     await pool.query(
-      'INSERT INTO cashback_history (userId, orderId, orderAmount, cashbackAmount, orderName) VALUES ($1, $2, $3, $4, $5)',
+      'INSERT INTO cashback_history (userId, orderId, orderAmount, cashbackAmount, "orderName") VALUES ($1, $2, $3, $4, $5)',
       [userId, orderId, orderAmount, cashbackAmount, orderName]
     );
 
