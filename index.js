@@ -261,12 +261,19 @@ try {
   const userCheck = await pool.query('SELECT * FROM users WHERE userId = $1', [id]);
   if (userCheck.rows.length === 0) {
     await pool.query(
-      'INSERT INTO users (userId, username, phone) VALUES ($1, $2, $3)',
-      [id, username || `${first_name} ${last_name}`, '+998991234567'] // Телефон захардкожен, можно потом заменить
+      'INSERT INTO users (userId, username, phone, avatar_url) VALUES ($1, $2, $3, $4)',
+      [id, username || `${first_name} ${last_name}`, '+998991234567', photo_url || null] // Телефон захардкожен, можно потом заменить
     );
     console.log('Пользователь добавлен в таблицу users:', { userId: id, username: username || `${first_name} ${last_name}` });
   } else {
     console.log('Пользователь уже существует:', { userId: id });
+    await queryWithRetry(
+      'UPDATE users SET avatar_url = $1 WHERE userId = $2',
+      [photo_url || null, id]
+    );
+    console.log('Аватарка обновлена:', { userId: id, avatar_url: photo_url });
+    
+    
   }
 } catch (err) {
   console.error('Ошибка при сохранении пользователя:', err);
