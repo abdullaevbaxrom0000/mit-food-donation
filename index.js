@@ -255,23 +255,28 @@ app.post('/api/telegram-login', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Сессия истекла' });
   }
 
-
-// Добавляем пользователя в таблицу users, если его там нет
-try {
-  const userCheck = await pool.query('SELECT * FROM users WHERE userId = $1', [id]);
-  if (userCheck.rows.length === 0) {
-    await pool.query(
-      'INSERT INTO users (userId, username, phone) VALUES ($1, $2, $3)',
-      [id, username || `${first_name} ${last_name}`, '+998991234567'] // Телефон захардкожен, можно потом заменить
-    );
-    console.log('Пользователь добавлен в таблицу users:', { userId: id, username: username || `${first_name} ${last_name}` });
-  } else {
-    console.log('Пользователь уже существует:', { userId: id });
+  // Добавляем или обновляем пользователя
+  try {
+    const userCheck = await pool.query('SELECT * FROM users WHERE userId = $1', [id]);
+    if (userCheck.rows.length === 0) {
+      // Добавляем нового пользователя
+      await pool.query(
+        'INSERT INTO users (userId, username, phone, avatar_url) VALUES ($1, $2, $3, $4)',
+        [id, username || `${first_name} ${last_name}`, '+998991234567', photo_url]
+      );
+      console.log('Пользователь добавлен в таблицу users:', { userId: id, username: username || `${first_name} ${last_name}` });
+    } else {
+      // Обновляем avatar_url для существующего пользователя
+      await pool.query(
+        'UPDATE users SET avatar_url = $1 WHERE userId = $2',
+        [photo_url, id]
+      );
+      console.log('Пользователь уже существует, аватар обновлён:', { userId: id });
+    }
+  } catch (err) {
+    console.error('Ошибка при сохранении пользователя:', err);
+    return res.status(500).json({ success: false, message: 'Ошибка при сохранении пользователя' });
   }
-} catch (err) {
-  console.error('Ошибка при сохранении пользователя:', err);
-  return res.status(500).json({ success: false, message: 'Ошибка при сохранении пользователя' });
-}
 
   const sessionToken = crypto.randomBytes(16).toString('hex');
 
@@ -311,6 +316,10 @@ try {
   });
   res.json({ success: true, message: 'Авторизация успешна' });
 });
+
+
+
+
 
 // Эндпоинт Google Login
 app.post('/api/google-login', async (req, res) => {
