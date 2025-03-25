@@ -85,6 +85,37 @@ router.get('/', async (req, res) => {
   }
 });
 
+
+// Обработка POST /api/menu
+router.post('/', async (req, res) => {
+  try {
+    // 1. Считываем данные из req.body
+    const { name, category, price, description, image_url } = req.body;
+
+    // 2. Выполняем SQL-запрос на добавление в таблицу dishes (пример!)
+    const insertQuery = `
+      INSERT INTO dishes (name, category, price, description, img)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id
+    `;
+    const values = [name, category, price, description, image_url];
+
+    const result = await pool.query(insertQuery, values);
+
+    // 3. Отправляем успешный ответ
+    res.json({ 
+      success: true, 
+      message: 'Блюдо успешно добавлено', 
+      newDishId: result.rows[0].id 
+    });
+  } catch (err) {
+    console.error('Ошибка при добавлении блюда:', err);
+    res.status(500).json({ success: false, message: 'Ошибка при добавлении блюда' });
+  }
+});
+
+
+
 // Вынесем функцию преобразования одного блюда
 function mapDish(d) {
   return {
