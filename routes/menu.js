@@ -1,5 +1,6 @@
-import express from "express";
-import pkg from "pg";
+const express = require("express");
+const { Pool } = require("pg");
+
 const { Pool } = pkg;
 
 const router = express.Router();
@@ -23,4 +24,5 @@ router.get("/", async (req, res) => {
   }
 });
 
-export default router;
+module.exports = router;
+
