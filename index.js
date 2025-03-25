@@ -9,6 +9,9 @@ const cors = require('cors');
 const crypto = require('crypto');
 const cookieParser = require('cookie-parser'); // Для парсинга cookies
 
+const menuRoutes = require('./routes/menu');
+
+
 const app = express();
 
 // Настройка CORS для Express
@@ -27,6 +30,9 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 app.use(cookieParser());
+
+app.use('/api/menu', menuRoutes);
+
 
 const server = http.createServer(app);
 const io = new Server(server, {
