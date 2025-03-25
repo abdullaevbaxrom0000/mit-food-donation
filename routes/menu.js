@@ -1,7 +1,6 @@
 const express = require("express");
 const { Pool } = require("pg");
 
-const { Pool } = pkg;
 
 const router = express.Router();
 
