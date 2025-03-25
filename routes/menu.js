@@ -1,45 +1,120 @@
 const express = require("express");
+const router = express.Router();
 const { Pool } = require("pg");
 
-const router = express.Router();
-
-// Подключение к PostgreSQL
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false,
-  },
+  ssl: { rejectUnauthorized: false },
 });
 
-// GET /api/menu — список всех блюд
-router.get("/", async (req, res) => {
+router.get("/menu", async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM menu_items ORDER BY id DESC");
-    res.json(result.rows);
-  } catch (error) {
-    console.error("Ошибка при получении меню:", error);
-    res.status(500).json({ error: "Ошибка сервера" });
-  }
-});
+    const dishesFromDB = await pool.query("SELECT * FROM dishes");
 
-// ✅ POST /api/menu — добавление блюда
-router.post("/", async (req, res) => {
-  const { name, category, price, description, image_url } = req.body;
+    const grouped = {
+      burgers: [],
+      sticks: [],
+      combos: [],
+      pizzas: [],
+      rolls: [],
+      extras: [],
+      drinks: [],
+      desserts: [],
+    };
 
-  if (!name || !category || !price) {
-    return res.status(400).json({ error: "Обязательные поля отсутствуют" });
-  }
+    dishesFromDB.rows.forEach((dish) => {
+      if (grouped[dish.category]) {
+        grouped[dish.category].push(dish);
+      }
+    });
 
-  try {
-    const result = await pool.query(
-      "INSERT INTO menu_items (name, category, price, description, image_url) VALUES ($1, $2, $3, $4, $5) RETURNING *",
-      [name, category, price, description, image_url]
-    );
+    const categories = [
+      {
+        title: 'Бургеры "Кат"',
+        id: "burgers",
+        items: grouped.burgers.map((d) => ({
+          name: d.name,
+          price: `${d.price.toLocaleString()} сум`,
+          img: d.img,
+          description: d.description,
+        })),
+      },
+      {
+        title: "Стики",
+        id: "sticks",
+        items: grouped.sticks.map((d) => ({
+          name: d.name,
+          price: `${d.price.toLocaleString()} сум`,
+          img: d.img,
+          description: d.description,
+        })),
+      },
+      {
+        title: "Комбо",
+        id: "combos",
+        items: grouped.combos.map((d) => ({
+          name: d.name,
+          price: `${d.price.toLocaleString()} сум`,
+          img: d.img,
+          description: d.description,
+        })),
+      },
+      {
+        title: "Пиццы",
+        id: "pizzas",
+        items: grouped.pizzas.map((d) => ({
+          name: d.name,
+          price: `${d.price.toLocaleString()} сум`,
+          img: d.img,
+          description: d.description,
+        })),
+      },
+      {
+        title: "Ролы",
+        id: "rolls",
+        items: grouped.rolls.map((d) => ({
+          name: d.name,
+          price: `${d.price.toLocaleString()} сум`,
+          img: d.img,
+          description: d.description,
+        })),
+      },
+      {
+        title: "Допы",
+        id: "extras",
+        items: grouped.extras.map((d) => ({
+          name: d.name,
+          price: `${d.price.toLocaleString()} сум`,
+          img: d.img,
+          description: d.description,
+        })),
+      },
+      {
+        title: "Напитки",
+        id: "drinks",
+        items: grouped.drinks.map((d) => ({
+          name: d.name,
+          price: `${d.price.toLocaleString()} сум`,
+          img: d.img,
+          description: d.description,
+        })),
+      },
+      {
+        title: "Десерты",
+        id: "desserts",
+        items: grouped.desserts.map((d) => ({
+          name: d.name,
+          price: `${d.price.toLocaleString()} сум`,
+          img: d.img,
+          description: d.description,
+        })),
+      },
+    ];
 
-    res.status(201).json(result.rows[0]);
-  } catch (error) {
-    console.error("Ошибка при добавлении блюда:", error);
-    res.status(500).json({ error: "Ошибка сервера" });
+    res.json({ success: true, categories });
+  } catch (err) {
+    console.error("Ошибка при получении меню:", err);
+    res.status(500).json({ success: false, message: "Ошибка сервера" });
   }
 });
 
