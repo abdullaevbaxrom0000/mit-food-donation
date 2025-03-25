@@ -8,10 +8,13 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// Эндпоинт GET /api/menu
+// GET /api/menu
 router.get('/', async (req, res) => {
   try {
+    console.log('⏳ Получаем меню из базы...');
+
     const result = await pool.query('SELECT * FROM dishes');
+    console.log('✅ Найдено блюд:', result.rows.length);
 
     const grouped = {
       burgers: [],
@@ -27,6 +30,8 @@ router.get('/', async (req, res) => {
     result.rows.forEach((dish) => {
       if (grouped[dish.category]) {
         grouped[dish.category].push(dish);
+      } else {
+        console.warn(`⚠ Неизвестная категория: ${dish.category}`);
       }
     });
 
@@ -34,90 +39,60 @@ router.get('/', async (req, res) => {
       {
         title: 'Бургеры "Кат"',
         id: 'burgers',
-        items: grouped.burgers.map(d => ({
-          name: d.name,
-          price: `${d.price.toLocaleString()} сум`,
-          img: d.img,
-          description: d.description
-        })),
+        items: grouped.burgers.map(mapDish),
       },
       {
         title: 'Стики',
         id: 'sticks',
-        items: grouped.sticks.map(d => ({
-          name: d.name,
-          price: `${d.price.toLocaleString()} сум`,
-          img: d.img,
-          description: d.description
-        })),
+        items: grouped.sticks.map(mapDish),
       },
       {
         title: 'Комбо',
         id: 'combos',
-        items: grouped.combos.map(d => ({
-          name: d.name,
-          price: `${d.price.toLocaleString()} сум`,
-          img: d.img,
-          description: d.description
-        })),
+        items: grouped.combos.map(mapDish),
       },
       {
         title: 'Пиццы',
         id: 'pizzas',
-        items: grouped.pizzas.map(d => ({
-          name: d.name,
-          price: `${d.price.toLocaleString()} сум`,
-          img: d.img,
-          description: d.description
-        })),
+        items: grouped.pizzas.map(mapDish),
       },
       {
         title: 'Ролы',
         id: 'rolls',
-        items: grouped.rolls.map(d => ({
-          name: d.name,
-          price: `${d.price.toLocaleString()} сум`,
-          img: d.img,
-          description: d.description
-        })),
+        items: grouped.rolls.map(mapDish),
       },
       {
         title: 'Допы',
         id: 'extras',
-        items: grouped.extras.map(d => ({
-          name: d.name,
-          price: `${d.price.toLocaleString()} сум`,
-          img: d.img,
-          description: d.description
-        })),
+        items: grouped.extras.map(mapDish),
       },
       {
         title: 'Напитки',
         id: 'drinks',
-        items: grouped.drinks.map(d => ({
-          name: d.name,
-          price: `${d.price.toLocaleString()} сум`,
-          img: d.img,
-          description: d.description
-        })),
+        items: grouped.drinks.map(mapDish),
       },
       {
         title: 'Десерты',
         id: 'desserts',
-        items: grouped.desserts.map(d => ({
-          name: d.name,
-          price: `${d.price.toLocaleString()} сум`,
-          img: d.img,
-          description: d.description
-        })),
+        items: grouped.desserts.map(mapDish),
       },
     ];
 
-    res.json({ success: true, categories });
+    return res.json({ success: true, categories });
   } catch (err) {
-    console.error('Ошибка при получении меню:', err);
-    res.status(500).json({ success: false, message: 'Ошибка сервера' });
+    console.error('❌ Ошибка при получении меню:', err);
+    return res.status(500).json({ success: false, message: 'Ошибка сервера' });
   }
 });
+
+// Вынесем функцию преобразования одного блюда
+function mapDish(d) {
+  return {
+    name: d.name,
+    price: `${Number(d.price).toLocaleString()} сум`,
+    img: d.img,
+    description: d.description
+  };
+}
 
 module.exports = router;
