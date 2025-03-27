@@ -163,4 +163,27 @@ function mapDish(d) {
 }
 
 
+
+
+// DELETE /api/menu/:id
+router.delete('/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await pool.query('DELETE FROM dishes WHERE id = $1 RETURNING *', [id]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'Блюдо не найдено' });
+    }
+
+    res.status(200).json({ success: true, message: 'Блюдо удалено' });
+  } catch (err) {
+    console.error('Ошибка при удалении блюда:', err);
+    res.status(500).json({ success: false, message: 'Ошибка при удалении блюда' });
+  }
+});
+
+
+
+
 module.exports = router;
