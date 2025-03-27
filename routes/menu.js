@@ -185,5 +185,42 @@ router.delete('/:id', async (req, res) => {
 
 
 
+// Получить список всех категорий
+router.get('/categories', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT id, title FROM categories ORDER BY title');
+    res.status(200).json({ success: true, categories: result.rows });
+  } catch (err) {
+    console.error('Ошибка при получении категорий:', err);
+    res.status(500).json({ success: false, message: 'Ошибка сервера' });
+  }
+});
+
+
+
+
+// Добавить новую категорию
+router.post('/categories', async (req, res) => {
+  const { id, title } = req.body;
+
+  if (!id || !title) {
+    return res.status(400).json({ success: false, message: 'id и title обязательны' });
+  }
+
+  try {
+    await pool.query(
+      'INSERT INTO categories (id, title) VALUES ($1, $2)',
+      [id, title]
+    );
+
+    res.status(201).json({ success: true, message: 'Категория добавлена' });
+  } catch (err) {
+    console.error('Ошибка при добавлении категории:', err);
+    res.status(500).json({ success: false, message: 'Ошибка при добавлении категории' });
+  }
+});
+
+
+
 
 module.exports = router;
