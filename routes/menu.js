@@ -15,6 +15,7 @@ router.get('/', async (req, res) => {
 
     const result = await pool.query('SELECT * FROM dishes');
     console.log('✅ Найдено блюд:', result.rows.length);
+    console.log('📥 Результаты из базы:', result.rows); // ✅ Вот здесь
 
     const grouped = {
       burgers: [],
@@ -89,7 +90,7 @@ router.get('/', async (req, res) => {
 });
 
 
-console.log(' Результаты из базы:', result.rows);
+
 
 
 
