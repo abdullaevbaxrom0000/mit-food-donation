@@ -78,12 +78,19 @@ router.get('/', async (req, res) => {
       },
     ];
 
+    console.log('📦 Сформированные категории:', JSON.stringify(categories, null, 2));
+
+
     return res.json({ success: true, categories });
   } catch (err) {
     console.error('❌ Ошибка при получении меню:', err);
     return res.status(500).json({ success: false, message: 'Ошибка сервера' });
   }
 });
+
+
+console.log('📥 Результаты из базы:', result.rows);
+
 
 
 // Обработка POST /api/menu
