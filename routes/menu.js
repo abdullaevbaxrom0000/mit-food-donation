@@ -154,12 +154,13 @@ router.put('/:id', async (req, res) => {
 // Вынесем функцию преобразования одного блюда
 function mapDish(d) {
   return {
-    id: row.id,
+    id: d.id,
     name: d.name,
     price: `${Number(d.price).toLocaleString()} сум`,
     img: d.img,
     description: d.description
   };
 }
+
 
 module.exports = router;
