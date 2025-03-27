@@ -115,10 +115,38 @@ router.post('/', async (req, res) => {
 });
 
 
+// Обновление блюда по ID
+router.put('/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, description, price, image_url, category } = req.body;
+
+  try {
+    const result = await pool.query(
+      `UPDATE dishes 
+       SET name = $1, description = $2, price = $3, img = $4, category = $5 
+       WHERE id = $6 
+       RETURNING *`,
+      [name, description, price, image_url, category, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Блюдо не найдено" });
+    }
+
+    res.status(200).json(result.rows[0]);
+  } catch (error) {
+    console.error("Ошибка при обновлении блюда:", error);
+    res.status(500).json({ message: "Ошибка сервера" });
+  }
+});
+
+
+
 
 // Вынесем функцию преобразования одного блюда
 function mapDish(d) {
   return {
+    id: row.id,
     name: d.name,
     price: `${Number(d.price).toLocaleString()} сум`,
     img: d.img,
