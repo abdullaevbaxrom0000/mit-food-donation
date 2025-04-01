@@ -36,48 +36,17 @@ router.get('/', async (req, res) => {
       }
     });
 
-    const categories = [
-      {
-        title: 'Бургеры "Кат"',
-        id: 'burgers',
-        items: grouped.burgers.map(mapDish),
-      },
-      {
-        title: 'Стики',
-        id: 'sticks',
-        items: grouped.sticks.map(mapDish),
-      },
-      {
-        title: 'Комбо',
-        id: 'combos',
-        items: grouped.combos.map(mapDish),
-      },
-      {
-        title: 'Пиццы',
-        id: 'pizzas',
-        items: grouped.pizzas.map(mapDish),
-      },
-      {
-        title: 'Ролы',
-        id: 'rolls',
-        items: grouped.rolls.map(mapDish),
-      },
-      {
-        title: 'Допы',
-        id: 'extras',
-        items: grouped.extras.map(mapDish),
-      },
-      {
-        title: 'Напитки',
-        id: 'drinks',
-        items: grouped.drinks.map(mapDish),
-      },
-      {
-        title: 'Десерты',
-        id: 'desserts',
-        items: grouped.desserts.map(mapDish),
-      },
-    ];
+    
+
+    // Подгружаем список категорий из таблицы
+const catResult = await pool.query('SELECT id, title FROM categories ORDER BY title');
+
+const categories = catResult.rows.map((cat) => ({
+  id: cat.id,
+  title: cat.title,
+  items: grouped[cat.id] ? grouped[cat.id].map(mapDish) : []
+}));
+
 
     console.log(' Сформированные категории:', JSON.stringify(categories, null, 2));
 
