@@ -11,22 +11,35 @@ const pool = new Pool({
 // GET /api/menu
 router.get('/', async (req, res) => {
   try {
-    console.log('⏳ Получаем меню из базы...');
+    console.log("⏳ Загружаем меню и категории...");
+    
+    const categoriesResult = await pool.query('SELECT id, title FROM categories ORDER BY title');
+    const dishesResult = await pool.query('SELECT * FROM dishes');
 
-    const result = await pool.query('SELECT * FROM dishes');
-    console.log('✅ Найдено блюд:', result.rows.length);
-    console.log('📥 Результаты из базы:', result.rows); // ✅ Вот здесь
+    const grouped = {};
+    categoriesResult.rows.forEach((cat) => {
+      grouped[cat.id] = {
+        title: cat.title,
+        id: cat.id,
+        items: [],
+      };
+    });
 
-    const grouped = {
-      burgers: [],
-      sticks: [],
-      combos: [],
-      pizzas: [],
-      rolls: [],
-      extras: [],
-      drinks: [],
-      desserts: [],
-    };
+    dishesResult.rows.forEach((dish) => {
+      if (grouped[dish.category]) {
+        grouped[dish.category].items.push(mapDish(dish));
+      } else {
+        console.warn(`⚠ Неизвестная категория: ${dish.category}`);
+      }
+    });
+
+    const categories = Object.values(grouped);
+    return res.json({ success: true, categories });
+  } catch (err) {
+    console.error("Ошибка при получении меню:", err);
+    return res.status(500).json({ success: false, message: "Ошибка сервера" });
+  }
+});
 
     result.rows.forEach((dish) => {
       if (grouped[dish.category]) {
