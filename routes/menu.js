@@ -13,11 +13,11 @@ router.get('/', async (req, res) => {
   try {
     console.log("⏳ Загружаем меню и категории...");
     
-    const categoriesResult = await pool.query('SELECT id, title FROM categories ORDER BY title');
-    const dishesResult = await pool.query('SELECT * FROM dishes');
+    const catResult = await pool.query('SELECT id, title FROM categories ORDER BY title');
+    const dishResult = await pool.query('SELECT * FROM dishes');
 
     const grouped = {};
-    categoriesResult.rows.forEach((cat) => {
+    catResult.rows.forEach((cat) => {
       grouped[cat.id] = {
         title: cat.title,
         id: cat.id,
@@ -25,7 +25,7 @@ router.get('/', async (req, res) => {
       };
     });
 
-    dishesResult.rows.forEach((dish) => {
+    dishResult.rows.forEach((dish) => {
       if (grouped[dish.category]) {
         grouped[dish.category].items.push(mapDish(dish));
       } else {
@@ -38,36 +38,6 @@ router.get('/', async (req, res) => {
   } catch (err) {
     console.error("Ошибка при получении меню:", err);
     return res.status(500).json({ success: false, message: "Ошибка сервера" });
-  }
-});
-
-    result.rows.forEach((dish) => {
-      if (grouped[dish.category]) {
-        grouped[dish.category].push(dish);
-      } else {
-        console.warn(`⚠ Неизвестная категория: ${dish.category}`);
-      }
-    });
-
-    
-
-    // Подгружаем список категорий из таблицы
-const catResult = await pool.query('SELECT id, title FROM categories ORDER BY title');
-
-const categories = catResult.rows.map((cat) => ({
-  id: cat.id,
-  title: cat.title,
-  items: grouped[cat.id] ? grouped[cat.id].map(mapDish) : []
-}));
-
-
-    console.log(' Сформированные категории:', JSON.stringify(categories, null, 2));
-
-
-    return res.json({ success: true, categories });
-  } catch (err) {
-    console.error(' Ошибка при получении меню:', err);
-    return res.status(500).json({ success: false, message: 'Ошибка сервера' });
   }
 });
 
