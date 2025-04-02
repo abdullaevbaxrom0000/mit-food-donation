@@ -12,19 +12,24 @@ const pool = new Pool({
 router.get('/', async (req, res) => {
   try {
     console.log("⏳ Загружаем меню и категории...");
-    
-    const catResult = await pool.query('SELECT id, title FROM categories ORDER BY title');
-    const dishResult = await pool.query('SELECT * FROM dishes');
 
+    // Сначала получаем список категорий
+    const catResult = await pool.query('SELECT id, title FROM categories ORDER BY title');
+
+    // Готовим структуру под каждую категорию
     const grouped = {};
     catResult.rows.forEach((cat) => {
       grouped[cat.id] = {
-        title: cat.title,
         id: cat.id,
+        title: cat.title,
         items: [],
       };
     });
 
+    // Потом получаем блюда
+    const dishResult = await pool.query('SELECT * FROM dishes');
+
+    // Добавляем блюда в соответствующие категории
     dishResult.rows.forEach((dish) => {
       if (grouped[dish.category]) {
         grouped[dish.category].items.push(mapDish(dish));
@@ -33,11 +38,14 @@ router.get('/', async (req, res) => {
       }
     });
 
+    // Преобразуем объект в массив
     const categories = Object.values(grouped);
-    return res.json({ success: true, categories });
+
+    console.log("✅ Категорий:", categories.length);
+    res.json({ success: true, categories });
   } catch (err) {
-    console.error("Ошибка при получении меню:", err);
-    return res.status(500).json({ success: false, message: "Ошибка сервера" });
+    console.error("❌ Ошибка при получении меню:", err);
+    res.status(500).json({ success: false, message: "Ошибка сервера" });
   }
 });
 
