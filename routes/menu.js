@@ -183,4 +183,48 @@ router.post('/categories', async (req, res) => {
 
 
 
+
+// Удалить категорию
+router.delete('/categories/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await pool.query('DELETE FROM categories WHERE id = $1 RETURNING *', [id]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ success: false, message: 'Категория не найдена' });
+    }
+
+    res.status(200).json({ success: true, message: 'Категория удалена' });
+  } catch (err) {
+    console.error('Ошибка при удалении категории:', err);
+    res.status(500).json({ success: false, message: 'Ошибка сервера' });
+  }
+});
+
+// Обновить категорию
+router.put('/categories/:id', async (req, res) => {
+  const { id } = req.params;
+  const { title } = req.body;
+
+  try {
+    const result = await pool.query(
+      'UPDATE categories SET title = $1 WHERE id = $2 RETURNING *',
+      [title, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Категория не найдена' });
+    }
+
+    res.status(200).json({ success: true, message: 'Категория обновлена', category: result.rows[0] });
+  } catch (err) {
+    console.error('Ошибка при обновлении категории:', err);
+    res.status(500).json({ success: false, message: 'Ошибка сервера' });
+  }
+});
+
+
+
+
 module.exports = router;
